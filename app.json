@@ -8,7 +8,10 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
     "ios": {
+      "bundleIdentifier": "com.yourcompany.tailgator",
+      "buildNumber": "1.0.0",
       "supportsTablet": true
     },
     "android": {
