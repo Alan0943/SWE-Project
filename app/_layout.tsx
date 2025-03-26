@@ -1,16 +1,33 @@
 import { Stack } from "expo-router";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
+import { tokenCache } from "@/cache";
+import {Slot} from 'expo-router';
+import { Text } from 'react-native';
+import React from 'react';
+
+
 
 export default function RootLayout() {
+
+  const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!
+
+if (!publishableKey) {
+  throw new Error(
+    'Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env',
+  )
+}
+
+
   return( 
-   <SafeAreaProvider>
-    <SafeAreaView style={{flex: 1}}>
-      <Stack > 
-        <Stack.Screen name="index" options={{title: "Feed"}} />
-        <Stack.Screen name="notifications" options={{title: "Notifications",
-        headerShown: false}} />
-      </Stack>;
-    </SafeAreaView>
-  </SafeAreaProvider> 
-  );
+    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+    <ClerkLoaded>
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1, backgroundColor: "black" }}>
+          <Stack screenOptions={{ headerShown: false }} />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </ClerkLoaded>
+  </ClerkProvider>
+);
 }
