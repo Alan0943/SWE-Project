@@ -2,9 +2,9 @@ import { Redirect, Stack } from 'expo-router'
 import { useAuth } from '@clerk/clerk-expo'
 
 export default function AuthLayout() {
-  const { isSignedIn } = useAuth()
+  let test = false;
 
-  if (isSignedIn) return <Redirect href="/" />
+ // if (test) return <Redirect href="/(tabs)" />
 
   return <Stack />
 }

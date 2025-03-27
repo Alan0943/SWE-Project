@@ -55,6 +55,21 @@ export const styles = StyleSheet.create({
     paddingBottom: 40,
     alignItems: "center",
   },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  input: {
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: 'white',
+    paddingHorizontal: 10,
+    height: 40,
+    width: "70%",
+    color: 'white',
+    backgroundColor: '#333',
+  },
   googleButton: {
     flexDirection: "row",
     alignItems: "center",
