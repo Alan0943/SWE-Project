@@ -25,10 +25,10 @@ export const styles = StyleSheet.create({
   
   appName: {
     fontSize: 42,
-    fontWeight: "700",
-    fontFamily: "JetBrainsMono-Medium",
+    fontWeight: "100",
+    fontFamily: 'Menlo-Regular',
     color: COLORS.primary,
-    letterSpacing: 0.5,
+    letterSpacing: 3,
     marginBottom: 8,
   },
   tagline: {
@@ -49,7 +49,7 @@ export const styles = StyleSheet.create({
     maxHeight: 280,
   },
   loginSection: {
-    marginTop: 100,
+    marginTop: 30,
     width: "100%",
     paddingHorizontal: 24,
     paddingBottom: 40,
@@ -63,7 +63,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 14,
-    marginBottom: 20,
+    marginBottom: 0,
     width: "100%",
     maxWidth: 300,
     shadowColor: "#000",
@@ -93,4 +93,29 @@ export const styles = StyleSheet.create({
     color: COLORS.grey,
     maxWidth: 280,
   },
+  // Example snippet for style overrides (adjust to your taste)
+textInput: {
+  width: '80%',
+  borderWidth: 1,
+  marginVertical: 0,
+  padding: 15,
+  borderColor: '#CCC',
+  color: '#fff',
+  borderRadius: 8,
+  marginBottom: 10,
+  
+},
+submitButton: {
+  backgroundColor: '#000', // or your chosen color
+  paddingVertical: 1,
+  paddingHorizontal: 20,
+  borderRadius: 8,
+  alignItems: 'center',
+  marginTop: 1,
+},
+submitButtonText: {
+  color: '#fff',
+  fontWeight: '600',
+},
+
 });
