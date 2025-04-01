@@ -55,10 +55,10 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="bookmarks"
+          name="Favorites"
           options={{
             tabBarIcon: ({ focused, color }) => (
-              <Ionicons name="bookmark" size={focused ? 32 : 26} color={color} />
+              <Ionicons name="star" size={focused ? 32 : 26} color={color} />
             ),
           }}
         />
@@ -74,7 +74,7 @@ export default function TabLayout() {
           name="notifications"
           options={{
             tabBarIcon: ({ focused, color }) => (
-              <Ionicons name="heart" size={focused ? 32 : 26} color={COLORS.red} />
+              <Ionicons name="heart" size={focused ? 32 : 26} color={color} />
             ),
           }}
         />

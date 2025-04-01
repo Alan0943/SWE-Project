@@ -1,12 +1,13 @@
-import { Image, Text, View, ScrollView } from "react-native";
+import { Image, Text, View, ScrollView, Pressable } from "react-native";
 import { styles } from "../../styles/auth.styles";
 import { useRouter } from "expo-router";
 import FlipCard from "react-native-flip-card";
+import { useFavorites } from "../../src/contexts/FavoritesContext";
 
 export default function Index() {
   const router = useRouter();
+  const { favorites, toggleFavorite } = useFavorites();
 
-  // ✅ Color + Label Helpers
   const getWaitColor = (minutes: number) => {
     if (minutes <= 10) return "limegreen";
     if (minutes <= 20) return "gold";
@@ -31,7 +32,6 @@ export default function Index() {
     return `${minutes} minutes ⚠️`;
   };
 
-  // ✅ Bar Data
   const bars = [
     {
       name: "MacDinton's Irish Pub",
@@ -101,94 +101,113 @@ export default function Index() {
 
       <View className="px-4">
         <View className="space-y-4">
-          {bars.map((bar, index) => (
-            <FlipCard
-              key={index}
-              style={{
-                borderWidth: 2,
-                borderColor: "limegreen",
-                borderRadius: 12,
-                marginBottom: 12,
-                height: 120,
-                width: "92%",          // ✅ slight margin from screen edge
-                alignSelf: "center",   // ✅ center the card
-              }}
-              friction={6}
-              perspective={1000}
-              flipHorizontal={true}
-              flipVertical={false}
-              clickable={true}
-            >
-              {/* Front Side */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  backgroundColor: "#333",
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  height: "100%",
-                }}
-              >
-                <Image
-                  source={bar.image}
-                  style={{
-                    width: 100,
-                    height: "100%",
-                    borderTopLeftRadius: 12,
-                    borderBottomLeftRadius: 12,
-                  }}
-                  resizeMode="cover"
-                />
-                <View style={{ flex: 1, padding: 12, justifyContent: "center" }}>
-                  <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>
-                    {bar.name}
-                  </Text>
-                  <Text style={{ fontSize: 11 }}>
-                    <Text style={{ color: "#ccc" }}>Current wait time: </Text>
-                    <Text style={{ color: getWaitColor(bar.waitTime) }}>
-                      {getWaitLabel(bar.waitTime)}
-                    </Text>
-                  </Text>
-                  <Text style={{ fontSize: 11 }}>
-                    <Text style={{ color: "#ccc" }}>Current cover charge: </Text>
-                    <Text style={{ color: getCoverColor(bar.coverCharge) }}>
-                      {getCoverLabel(bar.coverCharge)}
-                    </Text>
-                  </Text>
-                </View>
-              </View>
+          {bars.map((bar, index) => {
+            const isFavorite = favorites.includes(bar.name);
 
-              {/* Back Side */}
-              <View
+            return (
+              <FlipCard
+                key={`${bar.name}-${isFavorite}`}
                 style={{
-                  backgroundColor: "#444",
+                  borderWidth: 2,
+                  borderColor: "limegreen",
                   borderRadius: 12,
-                  height: "100%",
-                  justifyContent: "center",
-                  paddingHorizontal: 12,
+                  marginBottom: 12,
+                  height: 120,
+                  width: "92%",
+                  alignSelf: "center",
                 }}
+                friction={6}
+                perspective={1000}
+                flipHorizontal={true}
+                flipVertical={false}
+                clickable={true}
               >
-                <Text
-                  onPress={() => router.push("/report" as any)}
-                  style={{ color: "white", fontSize: 13 }}
+                {/* Front Side */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    backgroundColor: "#333",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    height: "100%",
+                  }}
                 >
-                  📢 Add New Report
-                </Text>
-                <Text
-                  onPress={() => {}}
-                  style={{ color: "white", fontSize: 13, marginTop: 6 }}
+                  <Image
+                    source={bar.image}
+                    style={{
+                      width: 100,
+                      height: "100%",
+                      borderTopLeftRadius: 12,
+                      borderBottomLeftRadius: 12,
+                    }}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flex: 1, padding: 12, justifyContent: "center" }}>
+                    <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>
+                      {bar.name}
+                    </Text>
+                    <Text style={{ fontSize: 11 }}>
+                      <Text style={{ color: "#ccc" }}>Current wait time: </Text>
+                      <Text style={{ color: getWaitColor(bar.waitTime) }}>
+                        {getWaitLabel(bar.waitTime)}
+                      </Text>
+                    </Text>
+                    <Text style={{ fontSize: 11 }}>
+                      <Text style={{ color: "#ccc" }}>Current cover charge: </Text>
+                      <Text style={{ color: getCoverColor(bar.coverCharge) }}>
+                        {getCoverLabel(bar.coverCharge)}
+                      </Text>
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Back Side */}
+                <View
+                  style={{
+                    backgroundColor: "#444",
+                    borderRadius: 12,
+                    height: "100%",
+                    justifyContent: "center",
+                    paddingHorizontal: 12,
+                  }}
                 >
-                  ⭐ Favorite This Bar
-                </Text>
-                <Text
-                  onPress={() => router.push(bar.route as any)}
-                  style={{ color: "white", fontSize: 13, marginTop: 6 }}
-                >
-                  📍 View This Bar
-                </Text>
-              </View>
-            </FlipCard>
-          ))}
+                  <Pressable
+                    onPress={() => router.push("/report" as any)}
+                    style={({ pressed }) => ({
+                      opacity: pressed ? 0.5 : 1,
+                      marginBottom: 6,
+                      alignSelf: "flex-start",
+                    })}
+                  >
+                    <Text style={{ color: "white", fontSize: 13 }}>📢 Add New Report</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => toggleFavorite(bar.name)}
+                    style={({ pressed }) => ({
+                      opacity: pressed ? 0.5 : 1,
+                      marginBottom: 6,
+                      alignSelf: "flex-start",
+                    })}
+                  >
+                    <Text style={{ color: "white", fontSize: 13 }}>
+                      {isFavorite ? "❌ Remove Favorite" : "⭐ Favorite This Bar"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => router.push(bar.route as any)}
+                    style={({ pressed }) => ({
+                      opacity: pressed ? 0.5 : 1,
+                      alignSelf: "flex-start",
+                    })}
+                  >
+                    <Text style={{ color: "white", fontSize: 13 }}>📍 View This Bar</Text>
+                  </Pressable>
+                </View>
+              </FlipCard>
+            );
+          })}
         </View>
       </View>
     </ScrollView>
