@@ -2,36 +2,14 @@ import { Image, Text, View, ScrollView, Pressable } from "react-native";
 import { styles } from "../../styles/auth.styles";
 import { useRouter } from "expo-router";
 import FlipCard from "react-native-flip-card";
-import { useFavorites } from "../../src/contexts/FavoritesContext";
+import { useFavorites } from '../../src/contexts/FavoritesContext';
+import { useEffect } from "react";
 
 export default function Index() {
   const router = useRouter();
   const { favorites, toggleFavorite } = useFavorites();
 
-  const getWaitColor = (minutes: number) => {
-    if (minutes <= 10) return "limegreen";
-    if (minutes <= 20) return "gold";
-    return "red";
-  };
-
-  const getCoverColor = (amount: number) => {
-    if (amount <= 9) return "limegreen";
-    if (amount <= 19) return "gold";
-    return "red";
-  };
-
-  const getCoverLabel = (amount: number) => {
-    if (amount === 0) return "Free Entry 🎉";
-    if (amount >= 20) return `$${amount} 🚨`;
-    return `$${amount}`;
-  };
-
-  const getWaitLabel = (minutes: number) => {
-    if (minutes <= 10) return "Short Wait ⏱️";
-    if (minutes <= 20) return `${minutes} minutes`;
-    return `${minutes} minutes ⚠️`;
-  };
-
+  // ✅ Bar data
   const bars = [
     {
       name: "MacDinton's Irish Pub",
@@ -84,9 +62,40 @@ export default function Index() {
     },
   ];
 
+  // ✅ Preload images on mount
+  useEffect(() => {
+    bars.forEach((bar) => {
+      const img = Image.resolveAssetSource(bar.image);
+      Image.prefetch(img.uri);
+    });
+  }, []);
+
+  const getWaitColor = (minutes: number) => {
+    if (minutes <= 10) return "limegreen";
+    if (minutes <= 20) return "gold";
+    return "red";
+  };
+
+  const getCoverColor = (amount: number) => {
+    if (amount <= 9) return "limegreen";
+    if (amount <= 19) return "gold";
+    return "red";
+  };
+
+  const getCoverLabel = (amount: number) => {
+    if (amount === 0) return "Free Entry 🎉";
+    if (amount >= 20) return `$${amount} 🚨`;
+    return `$${amount}`;
+  };
+
+  const getWaitLabel = (minutes: number) => {
+    if (minutes <= 10) return "Short Wait ⏱️";
+    if (minutes <= 20) return `${minutes} minutes`;
+    return `${minutes} minutes ⚠️`;
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingVertical: 20 }}>
-      {/* TailGator Logo */}
       <View style={{ alignItems: "center", marginBottom: 16 }}>
         <Image
           source={require("../../assets/images/TailGatorLogo.png")}
@@ -133,14 +142,14 @@ export default function Index() {
                   }}
                 >
                   <Image
-                    source={bar.image}
-                    style={{
-                      width: 100,
-                      height: "100%",
-                      borderTopLeftRadius: 12,
-                      borderBottomLeftRadius: 12,
-                    }}
-                    resizeMode="cover"
+                      source={bar.image}
+                      style={{
+                        width: 100,
+                        height: "100%",
+                        borderTopLeftRadius: 12,
+                        borderBottomLeftRadius: 12,
+                      }}
+                      resizeMode="cover"
                   />
                   <View style={{ flex: 1, padding: 12, justifyContent: "center" }}>
                     <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>
