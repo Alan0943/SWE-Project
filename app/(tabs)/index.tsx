@@ -1,4 +1,4 @@
-import { Image, Text, View, ScrollView, Pressable } from "react-native";
+import { Image, Text, View, ScrollView, Pressable, Platform } from "react-native";
 import { styles } from "../../styles/auth.styles";
 import { useRouter } from "expo-router";
 import FlipCard from "react-native-flip-card";
@@ -62,12 +62,14 @@ export default function Index() {
     },
   ];
 
-  // ✅ Preload images on mount
+  // ✅ Preload images on mount (only on iOS/Android)
   useEffect(() => {
-    bars.forEach((bar) => {
-      const img = Image.resolveAssetSource(bar.image);
-      Image.prefetch(img.uri);
-    });
+    if (Platform.OS !== "web") {
+      bars.forEach((bar) => {
+        const img = Image.resolveAssetSource(bar.image);
+        Image.prefetch(img.uri);
+      });
+    }
   }, []);
 
   const getWaitColor = (minutes: number) => {
@@ -142,14 +144,14 @@ export default function Index() {
                   }}
                 >
                   <Image
-                      source={bar.image}
-                      style={{
-                        width: 100,
-                        height: "100%",
-                        borderTopLeftRadius: 12,
-                        borderBottomLeftRadius: 12,
-                      }}
-                      resizeMode="cover"
+                    source={bar.image}
+                    style={{
+                      width: 100,
+                      height: "100%",
+                      borderTopLeftRadius: 12,
+                      borderBottomLeftRadius: 12,
+                    }}
+                    resizeMode="cover"
                   />
                   <View style={{ flex: 1, padding: 12, justifyContent: "center" }}>
                     <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>
