@@ -16,6 +16,7 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useFavorites } from "../../src/contexts/FavoritesContext"
 import { COLORS } from "@/constants/theme"
+import RideButtons from "../../src/contexts/RideButtons"
 
 const { width } = Dimensions.get("window")
 
@@ -215,6 +216,9 @@ export default function Cantina() {
           <Text style={[styles.statusValue, { color: COLORS.primary }]}>Report</Text>
         </Pressable>
       </View>
+
+      {/* Ride Buttons */}
+      <RideButtons barName={barDetails.name} address={barDetails.address} />
 
       {/* Description */}
       <View style={styles.section}>
