@@ -176,7 +176,7 @@ export default function Index() {
     if (expandedCard === barName) {
       Animated.timing(slideAnimations.current[barName], {
         toValue: 0,
-        duration: 300,
+        duration: 250, // Faster animation
         useNativeDriver: false,
       }).start(() => {
         setExpandedCard(null)
@@ -186,13 +186,13 @@ export default function Index() {
     else if (expandedCard) {
       Animated.timing(slideAnimations.current[expandedCard], {
         toValue: 0,
-        duration: 300,
+        duration: 250, // Faster animation
         useNativeDriver: false,
       }).start(() => {
         setExpandedCard(barName)
         Animated.timing(slideAnimations.current[barName], {
           toValue: 1,
-          duration: 300,
+          duration: 250, // Faster animation
           useNativeDriver: false,
         }).start()
       })
@@ -202,7 +202,7 @@ export default function Index() {
       setExpandedCard(barName)
       Animated.timing(slideAnimations.current[barName], {
         toValue: 1,
-        duration: 300,
+        duration: 250, // Faster animation
         useNativeDriver: false,
       }).start()
     }
@@ -228,8 +228,8 @@ export default function Index() {
   }
 
   // Calculate responsive dimensions
-  const cardHeight = isPhone ? 125 : 180
-  const leftImageWidth = isPhone ? 110 : 130
+  const cardHeight = 125 // Fixed height as requested
+  const leftImageWidth = cardHeight // Make image width equal to height for square aspect ratio
   const cardWidth = isPhone ? "94%" : "92%"
   const optionButtonHeight = isPhone ? 32 : 36
   const fontSize = isPhone ? { title: 14, text: 11, small: 9 } : { title: 16, text: 12, small: 10 }
@@ -255,170 +255,168 @@ export default function Index() {
             const isExpanded = expandedCard === bar.name
             const isHotSpot = bar.waitTime <= 10 && bar.coverCharge <= 10
 
-            // Calculate animated values
-            const cardWidthAnim =
-              slideAnimations.current[bar.name]?.interpolate({
-                inputRange: [0, 1],
-                outputRange: ["100%", isPhone ? "55%" : "45%"],
-              }) || "100%"
-
-            const optionsOpacity =
-              slideAnimations.current[bar.name]?.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0, 0, 1],
-              }) || 0
-
-            // Calculate left image width - it should disappear when expanded
-            const leftImageWidthAnim =
-              slideAnimations.current[bar.name]?.interpolate({
-                inputRange: [0, 1],
-                outputRange: [leftImageWidth, 0],
-              }) || leftImageWidth
+            // Animation for sliding
+            const slideAnim = slideAnimations.current[bar.name] || new Animated.Value(0)
 
             // Animation for the hot spot banner
-            const hotSpotLeftPosition =
-              slideAnimations.current[bar.name]?.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, -100], // Slide out to the left
-              }) || 0
+            const hotSpotLeftPosition = slideAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -100], // Slide out to the left
+            })
+
+            // Animation for options panel opacity
+            const optionsOpacity = slideAnim.interpolate({
+              inputRange: [0, 0.5, 1],
+              outputRange: [0, 0, 1],
+            })
 
             return (
               <View
                 key={`${bar.name}-${isFavorite}`}
                 style={{
-                  borderWidth: 2,
-                  borderColor: "limegreen",
-                  borderRadius: 12,
-                  marginBottom: 12,
-                  height: cardHeight,
-                  width: cardWidth,
                   alignSelf: "center",
-                  overflow: "hidden",
-                  flexDirection: "row",
+                  marginBottom: 20,
                 }}
               >
-                {/* Main card content */}
-                <Animated.View
+                {/* Improved glow effect with multiple layers */}
+                <View
                   style={{
-                    width: cardWidthAnim,
-                    backgroundColor: "#222",
-                    borderRadius: 10,
+                    position: "absolute",
+                    top: -4,
+                    left: -4,
+                    right: -4,
+                    bottom: -4,
+                    borderRadius: 16,
+                    backgroundColor: "limegreen",
+                    opacity: 0.4,
+                    shadowColor: "limegreen",
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 1,
+                    shadowRadius: 5,
+                    elevation: 20,
+                    zIndex: -1,
+                  }}
+                />
+
+          
+
+                <View
+                  style={{
+                    borderWidth: 2,
+                    borderColor: "limegreen",
+                    borderRadius: 12,
+                    height: cardHeight,
+                    width: cardWidth,
                     overflow: "hidden",
-                    height: "100%",
-                    position: "relative",
+                    flexDirection: "row",
+                    backgroundColor: "#222",
                   }}
                 >
-                  <Pressable
-                    onPress={() => toggleCardExpansion(bar.name)}
+                  {/* Main card content - fixed width */}
+                  <View
                     style={{
                       width: "100%",
+                      backgroundColor: "#222",
+                      borderRadius: 10,
+                      overflow: "hidden",
                       height: "100%",
+                      position: "relative",
                     }}
                   >
-                    {/* Background image with overlay */}
-                    <Image
-                      source={bar.image}
+                    <Pressable
+                      onPress={() => toggleCardExpansion(bar.name)}
                       style={{
-                        position: "absolute",
                         width: "100%",
                         height: "100%",
-                        opacity: 0.4,
-                      }}
-                      resizeMode="cover"
-                      blurRadius={1}
-                      defaultSource={bar.image}
-                    />
-
-                    {/* Gradient overlay */}
-                    <View
-                      style={{
-                        position: "absolute",
-                        width: "100%",
-                        height: "100%",
-                        backgroundColor: "rgba(0,0,0,0.5)",
-                        zIndex: 1,
-                      }}
-                    />
-
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        height: "100%",
-                        zIndex: 2,
-                        position: "relative",
                       }}
                     >
-                      {/* Left side with clear image - will be animated to disappear */}
-                      <Animated.View
+                      {/* Background image with overlay */}
+                      <Image
+                        source={bar.image}
                         style={{
-                          width: leftImageWidthAnim,
+                          position: "absolute",
+                          width: "100%",
                           height: "100%",
-                          overflow: "hidden",
-                          borderRightWidth: 1,
-                          borderRightColor: "rgba(255,255,255,0.1)",
+                          opacity: 0.4,
                         }}
-                      >
-                        <Image
-                          source={bar.image}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            resizeMode: "contain",
-                            backgroundColor: "#111",
-                          }}
-                          resizeMode="contain"
-                          defaultSource={bar.image}
-                        />
+                        resizeMode="cover"
+                        blurRadius={1}
+                        defaultSource={bar.image}
+                      />
 
-                        {/* Status badge - now outside the left image view for independent animation */}
-                      </Animated.View>
-
-                      {/* HOT SPOT badge with independent animation */}
-                      {isHotSpot && (
-                        <Animated.View
-                          style={{
-                            position: "absolute",
-                            top: 8,
-                            left: hotSpotLeftPosition,
-                            backgroundColor: "limegreen",
-                            paddingHorizontal: 8,
-                            paddingVertical: 4,
-                            borderTopRightRadius: 8,
-                            borderBottomRightRadius: 8,
-                            zIndex: 3,
-                          }}
-                        >
-                          <Text style={{ color: "black", fontSize: fontSize.small, fontWeight: "bold" }}>
-                            HOT SPOT 🔥
-                          </Text>
-                        </Animated.View>
-                      )}
-
-                      {/* Right side with info */}
+                      {/* Gradient overlay */}
                       <View
                         style={{
-                          flex: 1,
-                          padding: isPhone ? 10 : 12,
-                          justifyContent: "space-between",
+                          position: "absolute",
+                          width: "100%",
+                          height: "100%",
+                          backgroundColor: "rgba(0,0,0,0.5)",
+                          zIndex: 1,
+                        }}
+                      />
+
+                      {/* Content container - animated as a whole */}
+                      <Animated.View
+                        style={{
+                          flexDirection: "row",
+                          height: "100%",
+                          zIndex: 2,
+                          transform: [
+                            {
+                              translateX: slideAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, -leftImageWidth],
+                              }),
+                            },
+                          ],
                         }}
                       >
-                        <View>
+                        {/* Left side with clear image */}
+                        <View
+                          style={{
+                            width: leftImageWidth,
+                            height: "100%",
+                            overflow: "hidden",
+                            borderRightWidth: 1,
+                            borderRightColor: "rgba(255,255,255,0.1)",
+                          }}
+                        >
+                          <Image
+                            source={bar.image}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                            }}
+                            resizeMode="cover"
+                            defaultSource={bar.image}
+                          />
+                        </View>
+
+                        {/* Right side with info */}
+                        <View
+                          style={{
+                            flex: 1,
+                            padding: 12,
+                            justifyContent: "center",
+                          }}
+                        >
                           <Text
                             style={{
                               color: "white",
                               fontSize: fontSize.title,
                               fontWeight: "700",
-                              marginBottom: 4,
+                              marginBottom: 8,
                               textShadowColor: "rgba(0, 0, 0, 0.75)",
                               textShadowOffset: { width: 1, height: 1 },
                               textShadowRadius: 2,
                             }}
+                            numberOfLines={2}
                           >
                             {bar.name}
                           </Text>
 
                           {/* Status indicators */}
-                          <View style={{ marginTop: 6 }}>
+                          <View style={{ marginTop: 4 }}>
                             <View
                               style={{
                                 flexDirection: "row",
@@ -440,7 +438,9 @@ export default function Index() {
                               >
                                 Wait:{" "}
                                 <Text style={{ color: getWaitColor(bar.waitTime), fontWeight: "600" }}>
-                                  {getWaitLabel(bar.waitTime)}
+                                  {bar.waitTime === 0
+                                    ? "Short Wait ⏱️"
+                                    : `${bar.waitTime} minutes${bar.waitTime > 20 ? " ⚠️" : ""}`}
                                 </Text>
                               </Text>
                             </View>
@@ -465,115 +465,144 @@ export default function Index() {
                               >
                                 Cover:{" "}
                                 <Text style={{ color: getCoverColor(bar.coverCharge), fontWeight: "600" }}>
-                                  {getCoverLabel(bar.coverCharge)}
+                                  {bar.coverCharge === 0
+                                    ? "Free Entry 🎉"
+                                    : `${bar.coverCharge}${bar.coverCharge >= 20 ? " 🚨" : ""}`}
                                 </Text>
                               </Text>
                             </View>
                           </View>
-                        </View>
 
-                        {/* Tap indicator */}
-                        <View
-                          style={{
-                            alignItems: "flex-end",
-                            position: "absolute",
-                            bottom: 8,
-                            right: 8,
-                          }}
-                        >
-                          <Text
+                          {/* Tap indicator */}
+                          <View
                             style={{
-                              color: "rgba(255,255,255,0.6)",
-                              fontSize: fontSize.small,
-                              fontStyle: "italic",
+                              alignItems: "flex-end",
+                              position: "absolute",
+                              bottom: 8,
+                              right: 8,
                             }}
                           >
-                            {isExpanded ? "Tap to close" : "Tap for options"}{" "}
-                            <Ionicons
-                              name={isExpanded ? "chevron-forward" : "chevron-back"}
-                              size={fontSize.small}
-                              color="rgba(255,255,255,0.6)"
-                            />
-                          </Text>
+                            <Text
+                              style={{
+                                color: "rgba(255,255,255,0.6)",
+                                fontSize: fontSize.small,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              {isExpanded ? "Tap to close >       " : "Tap for options"}{" "}
+                              <Ionicons
+                                name={isExpanded ? "chevron-forward" : "chevron-back"}
+                                size={fontSize.small}
+                                color="rgba(255,255,255,0.6)"
+                              />
+                            </Text>
+                          </View>
                         </View>
-                      </View>
-                    </View>
-                  </Pressable>
-                </Animated.View>
+                      </Animated.View>
 
-                {/* Options panel */}
-                <Animated.View
-                  style={{
-                    flex: 1,
-                    backgroundColor: "#333",
-                    justifyContent: "center",
-                    paddingHorizontal: isPhone ? 8 : 10,
-                    opacity: optionsOpacity,
-                    overflow: "hidden",
-                  }}
-                >
-                  <Pressable
-                    onPress={() => {
-                      router.push("/report" as any)
+                      {/* HOT SPOT badge with independent animation */}
+                      {isHotSpot && (
+                        <Animated.View
+                          style={{
+                            position: "absolute",
+                            top: 8,
+                            left: hotSpotLeftPosition,
+                            backgroundColor: "limegreen",
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderTopRightRadius: 8,
+                            borderBottomRightRadius: 8,
+                            zIndex: 3,
+                          }}
+                        >
+                          <Text style={{ color: "black", fontSize: fontSize.small, fontWeight: "bold" }}>
+                            HOT SPOT 🔥
+                          </Text>
+                        </Animated.View>
+                      )}
+                    </Pressable>
+                  </View>
+
+                  {/* Options panel */}
+                  <Animated.View
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: "45%", // Fixed width for options panel
+                      backgroundColor: "#333",
+                      justifyContent: "center",
+                      paddingHorizontal: 10,
+                      opacity: optionsOpacity,
+                      overflow: "hidden",
+                      borderTopRightRadius: 10,
+                      borderBottomRightRadius: 10,
                     }}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.5 : 1,
-                      marginBottom: isPhone ? 6 : 8,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      padding: isPhone ? 4 : 6,
-                      borderRadius: 8,
-                      height: optionButtonHeight,
-                    })}
                   >
-                    <Ionicons name="megaphone" size={fontSize.text + 4} color="#FF6B6B" style={{ marginRight: 8 }} />
-                    <Text style={{ color: "white", fontSize: fontSize.text }}>Add Report</Text>
-                  </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        router.push("/report" as any)
+                      }}
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.5 : 1,
+                        marginBottom: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                        padding: 6,
+                        borderRadius: 8,
+                        height: optionButtonHeight,
+                      })}
+                    >
+                      <Ionicons name="megaphone" size={fontSize.text + 4} color="#FF6B6B" style={{ marginRight: 8 }} />
+                      <Text style={{ color: "white", fontSize: fontSize.text }}>Add Report</Text>
+                    </Pressable>
 
-                  <Pressable
-                    onPress={() => toggleFavorite(bar.name)}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.5 : 1,
-                      marginBottom: isPhone ? 6 : 8,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      padding: isPhone ? 4 : 6,
-                      borderRadius: 8,
-                      height: optionButtonHeight,
-                    })}
-                  >
-                    <Ionicons
-                      name={isFavorite ? "star" : "star-outline"}
-                      size={fontSize.text + 4}
-                      color="#FFD700"
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text style={{ color: "white", fontSize: fontSize.text }}>
-                      {isFavorite ? "Unfavorite" : "Favorite"}
-                    </Text>
-                  </Pressable>
+                    <Pressable
+                      onPress={() => toggleFavorite(bar.name)}
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.5 : 1,
+                        marginBottom: 8,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                        padding: 6,
+                        borderRadius: 8,
+                        height: optionButtonHeight,
+                      })}
+                    >
+                      <Ionicons
+                        name={isFavorite ? "star" : "star-outline"}
+                        size={fontSize.text + 4}
+                        color="#FFD700"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={{ color: "white", fontSize: fontSize.text }}>
+                        {isFavorite ? "Unfavorite" : "Favorite"}
+                      </Text>
+                    </Pressable>
 
-                  <Pressable
-                    onPress={() => {
-                      console.log("Navigating to:", bar.route)
-                      router.push(bar.route as any)
-                    }}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.5 : 1,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      padding: isPhone ? 4 : 6,
-                      borderRadius: 8,
-                      height: optionButtonHeight,
-                    })}
-                  >
-                    <Ionicons name="location" size={fontSize.text + 4} color="#4ADE80" style={{ marginRight: 8 }} />
-                    <Text style={{ color: "white", fontSize: fontSize.text }}>Details</Text>
-                  </Pressable>
-                </Animated.View>
+                    <Pressable
+                      onPress={() => {
+                        console.log("Navigating to:", bar.route)
+                        router.push(bar.route as any)
+                      }}
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.5 : 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: "rgba(255,255,255,0.1)",
+                        padding: 6,
+                        borderRadius: 8,
+                        height: optionButtonHeight,
+                      })}
+                    >
+                      <Ionicons name="location" size={fontSize.text + 4} color="#4ADE80" style={{ marginRight: 8 }} />
+                      <Text style={{ color: "white", fontSize: fontSize.text }}>Details</Text>
+                    </Pressable>
+                  </Animated.View>
+                </View>
               </View>
             )
           })}
