@@ -189,10 +189,10 @@ export default function Index() {
                 ref={(ref) => (flipCardRefs.current[bar.name] = ref)}
                 style={{
                   borderWidth: 2,
-                  borderColor: "limegreen",
+                  borderColor: "blue",
                   borderRadius: 12,
                   marginBottom: 12,
-                  height: 140,
+                  height: 300,
                   width: "92%",
                   alignSelf: "center",
                 }}
