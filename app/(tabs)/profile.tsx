@@ -4,953 +4,748 @@ import { useState, useEffect } from "react"
 import {
   View,
   Text,
-  TextInput,
+  StyleSheet,
   Image,
   Pressable,
-  StyleSheet,
-  Alert,
   ScrollView,
-  ActivityIndicator,
   FlatList,
-  Modal,
   SafeAreaView,
-  Platform,
+  Dimensions,
+  TextInput,
+  Modal,
+  TouchableOpacity,
 } from "react-native"
-import * as ImagePicker from "expo-image-picker"
-import { useClerk, useUser } from "@clerk/clerk-expo"
-import { useFavorites } from "../../src/contexts/FavoritesContext"
-import { useRouter } from "expo-router"
+import { useUser } from "@clerk/clerk-expo"
 import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "@/constants/theme"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 
-// Add these type definitions at the top of the file, after the imports
+const { width } = Dimensions.get("window")
+
+// Post type definition
+interface Post {
+  id: string
+  imageUri: string
+  caption: string
+  username: string
+  userImageUrl: string | null
+  timestamp: number
+  likes: string[] // array of user IDs who liked the post
+  comments: Comment[]
+  barTag: string | null
+}
+
+interface Comment {
+  id: string
+  userId: string
+  username: string
+  text: string
+  timestamp: number
+}
+
+// Friend type definition
 type Friend = {
   id: string
   name: string
   username: string
-  image: any // Using any for image since it's a require() import
+  image: any
   favorites: string[]
 }
 
-type Bar = {
-  name: string
-  waitTime: number
-  coverCharge: number
-  image: any // Using any for image since it's a require() import
-  route: string
-}
-
-// Update the mock data declarations to use the Friend type
+// Mock friends data
 const MOCK_FRIENDS: Friend[] = [
   {
     id: "1",
-    name: "Brendan Groff",
-    username: "brendangv",
+    name: "Alex Johnson",
+    username: "alexj",
     image: require("../../assets/images/default-profile.png"),
-    favorites: ["MacDinton's Irish Pub", "Cantina"],
+    favorites: ["MacDinton's Irish Pub", "JJ's Tavern"],
   },
   {
     id: "2",
-    name: "Alan Skrypek",
-    username: "bigal",
+    name: "Sam Wilson",
+    username: "samw",
     image: require("../../assets/images/default-profile.png"),
     favorites: ["Vivid Music Hall", "DTF"],
   },
   {
     id: "3",
-    name: "Garrett Mullins",
-    username: "gmullins",
+    name: "Taylor Smith",
+    username: "taylors",
     image: require("../../assets/images/default-profile.png"),
     favorites: ["Cantina", "Range"],
   },
 ]
 
-// Update the mock suggestions to use the Friend type
-const MOCK_SUGGESTIONS: Friend[] = [
-  {
-    id: "4",
-    name: "Tarik Firkatoune",
-    username: "tarfir",
-    image: require("../../assets/images/default-profile.png"),
-    favorites: [],
-  },
-  {
-    id: "5",
-    name: "Dan Khani",
-    username: "gsifdemon",
-    image: require("../../assets/images/default-profile.png"),
-    favorites: [],
-  },
-  {
-    id: "6",
-    name: "Max Ross",
-    username: "pcp",
-    image: require("../../assets/images/default-profile.png"),
-    favorites: [],
-  },
-  {
-    id: "7",
-    name: "Adam Sherman",
-    username: "sherm",
-    image: require("../../assets/images/default-profile.png"),
-    favorites: [],
-  },
-]
-
-let friends: Friend[] = MOCK_FRIENDS
-let searchResults: Friend[] = MOCK_SUGGESTIONS
-let selectedFriend: Friend | null = null
-
-export default function ProfileScreen() {
-  const { signOut } = useClerk()
+export default function Profile() {
   const { user } = useUser()
-  const { favorites } = useFavorites()
-  const router = useRouter()
-
+  const [activeTab, setActiveTab] = useState("posts")
+  const [friends, setFriends] = useState<Friend[]>(MOCK_FRIENDS)
+  const [showEditUsername, setShowEditUsername] = useState(false)
+  const [newUsername, setNewUsername] = useState("")
   const [username, setUsername] = useState(user?.username || "")
-  const [editingUsername, setEditingUsername] = useState(false)
-  const [profilePic, setProfilePic] = useState(user?.imageUrl || null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState("profile") // 'profile', 'friends', 'activity'
-  const [friendsState, setFriends] = useState(MOCK_FRIENDS)
-  const [searchModalVisible, setSearchModalVisible] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResultsState, setSearchResults] = useState(MOCK_SUGGESTIONS)
-  const [selectedFriendState, setSelectedFriend] = useState<Friend | null>(null)
-  const [friendProfileVisible, setFriendProfileVisible] = useState(false)
-  const [showProfile, setShowProfile] = useState(activeTab === "profile")
-  const [showFriends, setShowFriends] = useState(activeTab === "friends")
+  const [addedFriends, setAddedFriends] = useState<string[]>([])
+  const [showFriendProfile, setShowFriendProfile] = useState(false)
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null)
+  const [posts, setPosts] = useState<Post[]>([])
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null)
+  const [showPostDetail, setShowPostDetail] = useState(false)
+  const [newComment, setNewComment] = useState("")
 
-  // Bar data - same as in index.tsx
-  // Update the bars declaration to use the Bar type
-  const bars: Bar[] = [
-    {
-      name: "MacDinton's Irish Pub",
-      waitTime: 21,
-      coverCharge: 10,
-      image: require("../../assets/images/macdintons.jpg"),
-      route: "/(bars)/MacDintons",
-    },
-    {
-      name: "JJ's Tavern",
-      waitTime: 11,
-      coverCharge: 10,
-      image: require("../../assets/images/jjs.jpg"),
-      route: "/(bars)/JJsTavern",
-    },
-    {
-      name: "Vivid Music Hall",
-      waitTime: 0,
-      coverCharge: 0,
-      image: require("../../assets/images/vivid.jpg"),
-      route: "/(bars)/VividMusicHall",
-    },
-    {
-      name: "DTF",
-      waitTime: 15,
-      coverCharge: 20,
-      image: require("../../assets/images/dtf.jpg"),
-      route: "/(bars)/DTF",
-    },
-    {
-      name: "Cantina",
-      waitTime: 35,
-      coverCharge: 20,
-      image: require("../../assets/images/Cantina.jpg"),
-      route: "/(bars)/Cantina",
-    },
-    {
-      name: "Lil Rudy's",
-      waitTime: 0,
-      coverCharge: 5,
-      image: require("../../assets/images/LilRudys.jpg"),
-      route: "/(bars)/LilRudys",
-    },
-    {
-      name: "Range",
-      waitTime: 20,
-      coverCharge: 10,
-      image: require("../../assets/images/range.jpg"),
-      route: "/(bars)/Range",
-    },
-  ]
-
-  // Helper functions from index.tsx
-  const getWaitColor = (minutes: number) => {
-    if (minutes <= 10) return "limegreen"
-    if (minutes <= 20) return "gold"
-    return "red"
-  }
-
-  const getCoverColor = (amount: number) => {
-    if (amount <= 9) return "limegreen"
-    if (amount <= 19) return "gold"
-    return "red"
-  }
-
-  const getCoverLabel = (amount: number) => {
-    if (amount === 0) return "Free Entry 🎉"
-    if (amount >= 20) return `$${amount} 🚨`
-    return `$${amount}`
-  }
-
-  const getWaitLabel = (minutes: number) => {
-    if (minutes <= 10) return "Short Wait ⏱️"
-    if (minutes <= 20) return `${minutes} minutes`
-    return `${minutes} minutes ⚠️`
-  }
-
-  // Search for friends
+  // Load posts from AsyncStorage
   useEffect(() => {
-    if (searchQuery.trim() === "") {
-      searchResults = MOCK_SUGGESTIONS
-      setSearchResults(MOCK_SUGGESTIONS)
-      return
-    }
-
-    const query = searchQuery.toLowerCase()
-    const filtered = MOCK_SUGGESTIONS.filter(
-      (user) => user.name.toLowerCase().includes(query) || user.username.toLowerCase().includes(query),
-    )
-    searchResults = filtered
-    setSearchResults(filtered)
-  }, [searchQuery])
-
-  const handlePickImage = async () => {
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
-
-    if (result.canceled) return;
-
-    setIsLoading(true);
-
-    const uri = result.assets[0].uri;
-    const name = uri.split("/").pop() || "profile.jpg";
-    const match = /\.(\w+)$/.exec(name);
-    const type = match ? `image/${match[1]}` : `image`;
-
-    const response = await fetch(uri);
-    const blob = await response.blob();
-
-    const file = new File([blob], name, { type });
-
-    // Clerk expects a File object
-    await user?.setProfileImage({ file });
-
-    await user?.reload();
-    setProfilePic(user?.imageUrl || uri);
-
-    Alert.alert("Success", "Profile picture updated successfully");
-  } catch (error) {
-    console.error("Error updating profile image:", error);
-    Alert.alert("Error", "Failed to update profile picture. Please try again.");
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  
-
-  const handleSignOut = async () => {
-    try {
-      await signOut()
-    } catch (error) {
-      console.error("Error signing out:", error)
-      Alert.alert("Error", "Failed to sign out. Please try again.")
-    }
-  }
-
-  const handleUsernameSave = async () => {
-    try {
-      // Validate username
-      if (!username.trim()) {
-        Alert.alert("Error", "Username cannot be empty")
-        return
+    const loadPosts = async () => {
+      try {
+        const storedPosts = await AsyncStorage.getItem("posts")
+        if (storedPosts) {
+          const parsedPosts = JSON.parse(storedPosts)
+          // Filter posts to only show the current user's posts
+          const userPosts = parsedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
+          setPosts(userPosts)
+        }
+      } catch (error) {
+        console.error("Error loading posts:", error)
       }
-
-      // Show loading indicator
-      setIsLoading(true)
-
-      // Update username in Clerk
-      await user?.update({
-        username: username,
-      })
-
-      // Refresh user data
-      await user?.reload()
-
-      // Exit editing mode
-      setEditingUsername(false)
-
-      // Show success message
-      Alert.alert("Success", "Username updated successfully")
-    } catch (error) {
-      console.error("Error updating username:", error)
-      Alert.alert("Error", "Failed to update username. Please try again.")
-
-      // Revert to previous username on error
-      setUsername(user?.username || "")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Add friend function
-  const handleAddFriend = (friend: Friend) => {
-    // Check if already friends
-    const isAlreadyFriend = friends.some((f) => f.id === friend.id)
-    if (isAlreadyFriend) {
-      Alert.alert("Already Friends", `You are already friends with ${friend.name}`)
-      return
     }
 
-    // Add to friends list
-    friends = [...friends, friend]
-    setFriends([...friends, friend])
+    loadPosts()
+  }, [username, user?.username])
 
-    // Remove from suggestions
-    const updatedSuggestions = searchResults.filter((f) => f.id !== friend.id)
-    searchResults = updatedSuggestions
-    setSearchResults(updatedSuggestions)
-
-    Alert.alert("Friend Added", `${friend.name} has been added to your friends list`)
-  }
-
-  // Remove friend function
-  const handleRemoveFriend = (friendId: string) => {
-    Alert.alert("Remove Friend", "Are you sure you want to remove this friend?", [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          const updatedFriends = friends.filter((f) => f.id !== friendId)
-          friends = updatedFriends
-          setFriends(updatedFriends)
-
-          // If viewing this friend's profile, close it
-          if (selectedFriend && selectedFriend.id === friendId) {
-            setFriendProfileVisible(false)
-            selectedFriend = null
-            setSelectedFriend(null)
-          }
-        },
-      },
-    ])
-  }
-
-  // View friend profile
-  const handleViewFriendProfile = (friend: Friend) => {
-    selectedFriend = friend
-    setSelectedFriend(friend)
-    setFriendProfileVisible(true)
-  }
-
-  // Get only the favorited bars
-  const favoritedBars = bars.filter((bar) => favorites.includes(bar.name))
-
-  // Get friend's favorited bars
-  const getFriendFavoritedBars = (friendFavorites: string[]) => {
-    return bars.filter((bar) => friendFavorites.includes(bar.name))
-  }
-
-  // Render friend's profile
-  const renderFriendProfile = () => {
-    if (!selectedFriend) return null
-
-    const friendFavoritedBars = getFriendFavoritedBars(selectedFriend.favorites)
-
-    return (
-      <Modal visible={friendProfileVisible} animationType="slide" onRequestClose={() => setFriendProfileVisible(false)}>
-        <SafeAreaView style={styles.friendProfileContainer}>
-          <View style={styles.friendProfileHeader}>
-            <Pressable onPress={() => setFriendProfileVisible(false)} style={styles.modalBackButton}>
-              <Ionicons name="arrow-back" size={24} color="white" />
-            </Pressable>
-            <Text style={styles.friendProfileTitle}>{selectedFriend.name}'s Profile</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={{ flex: 1 }}>
-            <View style={styles.friendProfileInfo}>
-              <Image source={selectedFriend.image} style={styles.friendProfileImage} />
-              <Text style={styles.friendProfileName}>{selectedFriend.name}</Text>
-              <Text style={styles.friendProfileUsername}>@{selectedFriend.username}</Text>
-            </View>
-
-            <View style={styles.friendFavoritesSection}>
-              <Text style={styles.sectionTitle}>{selectedFriend.name}'s Favorite Bars</Text>
-
-              {friendFavoritedBars.length === 0 ? (
-                <View style={styles.emptyFavorites}>
-                  <Ionicons name="star-outline" size={40} color="#555" />
-                  <Text style={styles.emptyText}>No favorites yet</Text>
-                </View>
-              ) : (
-                <View style={styles.favoritesList}>
-                  {friendFavoritedBars.map((bar) => (
-                    <Pressable
-                      key={bar.name}
-                      style={styles.favoriteBar}
-                      onPress={() => {
-                        setFriendProfileVisible(false)
-                        router.push(bar.route as any)
-                      }}
-                    >
-                      <Image source={bar.image} style={styles.barImage} resizeMode="cover" />
-                      <View style={styles.barInfo}>
-                        <Text style={styles.barName}>{bar.name}</Text>
-                        <View style={styles.barStats}>
-                          <View style={styles.statItem}>
-                            <Ionicons name="time-outline" size={14} color={getWaitColor(bar.waitTime)} />
-                            <Text style={styles.statText}>
-                              Wait:{" "}
-                              <Text style={{ color: getWaitColor(bar.waitTime) }}>{getWaitLabel(bar.waitTime)}</Text>
-                            </Text>
-                          </View>
-                          <View style={styles.statItem}>
-                            <Ionicons name="cash-outline" size={14} color={getCoverColor(bar.coverCharge)} />
-                            <Text style={styles.statText}>
-                              Cover:{" "}
-                              <Text style={{ color: getCoverColor(bar.coverCharge) }}>
-                                {getCoverLabel(bar.coverCharge)}
-                              </Text>
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                      <Ionicons name="chevron-forward" size={20} color="#666" style={styles.chevron} />
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <Pressable
-              onPress={() => selectedFriend && handleRemoveFriend(selectedFriend.id)}
-              style={styles.removeFriendButton}
-            >
-              <Ionicons name="person-remove" size={18} color="white" style={{ marginRight: 8 }} />
-              <Text style={styles.removeFriendText}>Remove Friend</Text>
-            </Pressable>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-    )
-  }
-
-  // Render search modal
-  const renderSearchModal = () => {
-    return (
-      <Modal visible={searchModalVisible} animationType="slide" onRequestClose={() => setSearchModalVisible(false)}>
-        <SafeAreaView style={styles.searchModalContainer}>
-          <View style={styles.searchModalHeader}>
-            <Pressable onPress={() => setSearchModalVisible(false)} style={styles.modalBackButton}>
-              <Ionicons name="arrow-back" size={24} color="white" />
-            </Pressable>
-            <Text style={styles.searchModalTitle}>Find Friends</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <View style={styles.searchInputContainer}>
-            <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by name or username"
-              placeholderTextColor="#999"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCapitalize="none"
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery("")} style={styles.clearButton}>
-                <Ionicons name="close-circle" size={20} color="#999" />
-              </Pressable>
-            )}
-          </View>
-
-          <FlatList
-            data={searchResults}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.searchResultItem}>
-                <Image source={item.image} style={styles.searchResultImage} />
-                <View style={styles.searchResultInfo}>
-                  <Text style={styles.searchResultName}>{item.name}</Text>
-                  <Text style={styles.searchResultUsername}>@{item.username}</Text>
-                </View>
-                <Pressable onPress={() => handleAddFriend(item)} style={styles.addFriendButton}>
-                  <Ionicons name="person-add" size={18} color="white" />
-                </Pressable>
-              </View>
-            )}
-            ListEmptyComponent={
-              <View style={styles.emptySearchResults}>
-                <Ionicons name="search" size={40} color="#555" />
-                <Text style={styles.emptyText}>No users found</Text>
-              </View>
-            }
-          />
-        </SafeAreaView>
-      </Modal>
-    )
-  }
-
+  // Load added friends from AsyncStorage on mount
   useEffect(() => {
-    setShowProfile(activeTab === "profile")
-    setShowFriends(activeTab === "friends")
-  }, [activeTab])
+    const loadAddedFriends = async () => {
+      try {
+        console.log("Loading added friends from AsyncStorage...")
+        const storedFriends = await AsyncStorage.getItem("addedFriends")
+        if (storedFriends) {
+          const parsedFriends = JSON.parse(storedFriends)
+          console.log("Loaded added friends:", parsedFriends)
+          setAddedFriends(parsedFriends)
+        } else {
+          console.log("No added friends found in AsyncStorage")
+        }
+      } catch (error) {
+        console.error("Error loading added friends:", error)
+      }
+    }
+
+    loadAddedFriends()
+  }, [])
+
+  // Update friends list when addedFriends changes
+  useEffect(() => {
+    // Create a combined list of mock friends and added friends
+    const updatedFriends = [...MOCK_FRIENDS]
+
+    // Log for debugging
+    console.log("Added friends IDs:", addedFriends)
+
+    // Add any friends from addedFriends that aren't in MOCK_FRIENDS
+    addedFriends.forEach((friendId) => {
+      // Check if this friend is already in our list
+      const existingFriend = updatedFriends.find((f) => f.id === friendId)
+
+      if (!existingFriend) {
+        // This is a new friend, add them
+        // For now, we'll create a placeholder friend object
+        updatedFriends.push({
+          id: friendId,
+          name: `Friend ${friendId}`,
+          username: `user${friendId}`,
+          image: require("../../assets/images/default-profile.png"),
+          favorites: [],
+        })
+      }
+    })
+
+    setFriends(updatedFriends)
+    console.log("Updated friends list:", updatedFriends)
+  }, [addedFriends])
+
+  const handleEditUsername = () => {
+    if (newUsername.trim()) {
+      setUsername(newUsername)
+      setShowEditUsername(false)
+      setNewUsername("")
+    }
+  }
+
+  const viewFriendProfile = (friend: Friend) => {
+    setSelectedFriend(friend)
+    setShowFriendProfile(true)
+  }
+
+  const removeFriend = async (friendId: string) => {
+    // Update local state
+    const updatedAddedFriends = addedFriends.filter((id) => id !== friendId)
+    setAddedFriends(updatedAddedFriends)
+
+    // Save to AsyncStorage
+    try {
+      await AsyncStorage.setItem("addedFriends", JSON.stringify(updatedAddedFriends))
+      console.log("Friend removed and saved to AsyncStorage:", friendId)
+    } catch (error) {
+      console.error("Error saving updated friends list:", error)
+    }
+
+    // Close the modal if open
+    if (selectedFriend?.id === friendId) {
+      setShowFriendProfile(false)
+    }
+  }
+
+  // Format timestamp to readable date
+  const formatDate = (timestamp: number) => {
+    const date = new Date(timestamp)
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  }
+
+  // Handle like post
+  const handleLikePost = async (postId: string) => {
+    try {
+      // Get all posts
+      const storedPosts = await AsyncStorage.getItem("posts")
+      if (storedPosts) {
+        const allPosts = JSON.parse(storedPosts)
+
+        // Find the post to update
+        const updatedPosts = allPosts.map((post: Post) => {
+          if (post.id === postId) {
+            // Check if user already liked the post
+            const userLiked = post.likes.includes(user?.id || "anonymous")
+
+            if (userLiked) {
+              // Unlike the post
+              return {
+                ...post,
+                likes: post.likes.filter((id: string) => id !== (user?.id || "anonymous")),
+              }
+            } else {
+              // Like the post
+              return {
+                ...post,
+                likes: [...post.likes, user?.id || "anonymous"],
+              }
+            }
+          }
+          return post
+        })
+
+        // Save updated posts
+        await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
+
+        // Update local state with user's posts
+        const userPosts = updatedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
+        setPosts(userPosts)
+
+        // Update selected post if in detail view
+        if (selectedPost && selectedPost.id === postId) {
+          const updatedPost = updatedPosts.find((post: Post) => post.id === postId)
+          if (updatedPost) {
+            setSelectedPost(updatedPost)
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error updating post likes:", error)
+    }
+  }
+
+  // Add comment to post
+  const addComment = async () => {
+    if (!selectedPost || !newComment.trim()) return
+
+    try {
+      // Get all posts
+      const storedPosts = await AsyncStorage.getItem("posts")
+      if (storedPosts) {
+        const allPosts = JSON.parse(storedPosts)
+
+        // Create new comment
+        const comment = {
+          id: Date.now().toString(),
+          userId: user?.id || "anonymous",
+          username: username || user?.username || "User",
+          text: newComment.trim(),
+          timestamp: Date.now(),
+        }
+
+        // Find the post to update
+        const updatedPosts = allPosts.map((post: Post) => {
+          if (post.id === selectedPost.id) {
+            return {
+              ...post,
+              comments: [...post.comments, comment],
+            }
+          }
+          return post
+        })
+
+        // Save updated posts
+        await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
+
+        // Update local state with user's posts
+        const userPosts = updatedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
+        setPosts(userPosts)
+
+        // Update selected post
+        const updatedPost = updatedPosts.find((post: Post) => post.id === selectedPost.id)
+        if (updatedPost) {
+          setSelectedPost(updatedPost)
+        }
+
+        // Clear comment input
+        setNewComment("")
+      }
+    } catch (error) {
+      console.error("Error adding comment:", error)
+    }
+  }
+
+  // View post details
+  const viewPostDetails = (post: Post) => {
+    setSelectedPost(post)
+    setShowPostDetail(true)
+  }
+
+  // Render post grid item
+  const renderPostGridItem = ({ item }: { item: Post }) => (
+    <Pressable style={styles.postGridItem} onPress={() => viewPostDetails(item)}>
+      <Image source={{ uri: item.imageUri }} style={styles.postGridImage} />
+      <View style={styles.postGridOverlay}>
+        <View style={styles.postGridStats}>
+          <View style={styles.postGridStat}>
+            <Ionicons name="heart" size={14} color="white" />
+            <Text style={styles.postGridStatText}>{item.likes.length}</Text>
+          </View>
+          <View style={styles.postGridStat}>
+            <Ionicons name="chatbubble" size={14} color="white" />
+            <Text style={styles.postGridStatText}>{item.comments.length}</Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  )
 
   return (
-    <View style={styles.container}>
-      {/* Tab Navigation */}
-      <View style={styles.tabBar}>
-        <Pressable
-          style={[styles.tab, activeTab === "profile" && styles.activeTab]}
-          onPress={() => setActiveTab("profile")}
-        >
-          <Ionicons name="person" size={20} color={activeTab === "profile" ? COLORS.primary : "#999"} />
-          <Text style={[styles.tabText, activeTab === "profile" && styles.activeTabText]}>Profile</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, activeTab === "friends" && styles.activeTab]}
-          onPress={() => setActiveTab("friends")}
-        >
-          <Ionicons name="people" size={20} color={activeTab === "friends" ? COLORS.primary : "#999"} />
-          <Text style={[styles.tabText, activeTab === "friends" && styles.activeTabText]}>Friends</Text>
-        </Pressable>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <Image
+            source={user?.imageUrl ? { uri: user.imageUrl } : require("../../assets/images/default-profile.png")}
+            style={styles.profileImage}
+          />
 
-      {/* Profile Tab */}
-      {showProfile && (
-        <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-          <View style={styles.profileSection}>
-            <Pressable onPress={handlePickImage} disabled={isLoading} style={styles.avatarContainer}>
-              {isLoading ? (
-                <View
-                  style={[styles.avatar, { justifyContent: "center", alignItems: "center", backgroundColor: "#333" }]}
-                >
-                  <ActivityIndicator color={COLORS.primary} size="small" />
-                </View>
-              ) : (
-                <Image
-                  source={profilePic ? { uri: profilePic } : require("../../assets/images/default-profile.png")}
-                  style={styles.avatar}
-                />
-              )}
-              <View style={styles.editAvatarBadge}>
-                <Ionicons name="camera" size={14} color="white" />
-              </View>
+          <View style={styles.usernameContainer}>
+            <Text style={styles.username}>{username || user?.username || "User"}</Text>
+            <Pressable style={styles.editUsernameButton} onPress={() => setShowEditUsername(true)}>
+              <Text style={styles.editUsernameText}>Change Username</Text>
             </Pressable>
-
-            <Pressable onPress={handlePickImage} style={styles.changePhotoButton}>
-              <Text style={styles.changePhotoText}>Change Photo</Text>
-            </Pressable>
-
-            {editingUsername ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter Username"
-                  value={username}
-                  onChangeText={setUsername}
-                  editable={!isLoading}
-                />
-                <Pressable onPress={handleUsernameSave} disabled={isLoading} style={styles.saveButton}>
-                  <Text style={styles.saveText}>{isLoading ? "Saving..." : "Save"}</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Text style={styles.username}>{username || "Set Username"}</Text>
-                <Pressable onPress={() => setEditingUsername(true)} disabled={isLoading} style={styles.editButton}>
-                  <Ionicons name="pencil" size={14} color={COLORS.primary} style={{ marginRight: 4 }} />
-                  <Text style={styles.editText}>Edit Username</Text>
-                </Pressable>
-              </>
-            )}
           </View>
 
-          {/* Favorites Section */}
-          <View style={styles.favoritesSection}>
-            <Text style={styles.sectionTitle}>My Favorite Bars</Text>
-
-            {favoritedBars.length === 0 ? (
-              <View style={styles.emptyFavorites}>
-                <Ionicons name="star-outline" size={40} color="#555" />
-                <Text style={styles.emptyText}>No favorites yet</Text>
-                <Text style={styles.emptySubtext}>Add favorites from the Bars tab</Text>
-              </View>
-            ) : (
-              <View style={styles.favoritesList}>
-                {favoritedBars.map((bar) => (
-                  <Pressable key={bar.name} style={styles.favoriteBar} onPress={() => router.push(bar.route as any)}>
-                    <Image source={bar.image} style={styles.barImage} resizeMode="cover" />
-                    <View style={styles.barInfo}>
-                      <Text style={styles.barName}>{bar.name}</Text>
-                      <View style={styles.barStats}>
-                        <View style={styles.statItem}>
-                          <Ionicons name="time-outline" size={14} color={getWaitColor(bar.waitTime)} />
-                          <Text style={styles.statText}>
-                            Wait:{" "}
-                            <Text style={{ color: getWaitColor(bar.waitTime) }}>{getWaitLabel(bar.waitTime)}</Text>
-                          </Text>
-                        </View>
-                        <View style={styles.statItem}>
-                          <Ionicons name="cash-outline" size={14} color={getCoverColor(bar.coverCharge)} />
-                          <Text style={styles.statText}>
-                            Cover:{" "}
-                            <Text style={{ color: getCoverColor(bar.coverCharge) }}>
-                              {getCoverLabel(bar.coverCharge)}
-                            </Text>
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#666" style={styles.chevron} />
-                  </Pressable>
-                ))}
-              </View>
-            )}
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{posts.length}</Text>
+              <Text style={styles.statLabel}>Posts</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{friends.length}</Text>
+              <Text style={styles.statLabel}>Friends</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>5</Text>
+              <Text style={styles.statLabel}>Favorites</Text>
+            </View>
           </View>
+        </View>
 
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
           <Pressable
-            onPress={handleSignOut}
-            style={[styles.signOutButton, isLoading && { opacity: 0.5 }]}
-            disabled={isLoading}
+            style={[styles.tab, activeTab === "posts" && styles.activeTab]}
+            onPress={() => setActiveTab("posts")}
           >
-            <Text style={styles.signOutText}>Sign Out</Text>
+            <Ionicons name="grid-outline" size={24} color={activeTab === "posts" ? COLORS.primary : "white"} />
           </Pressable>
-        </ScrollView>
-      )}
+          <Pressable
+            style={[styles.tab, activeTab === "friends" && styles.activeTab]}
+            onPress={() => setActiveTab("friends")}
+          >
+            <Ionicons name="people-outline" size={24} color={activeTab === "friends" ? COLORS.primary : "white"} />
+          </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === "favorites" && styles.activeTab]}
+            onPress={() => setActiveTab("favorites")}
+          >
+            <Ionicons name="heart-outline" size={24} color={activeTab === "favorites" ? COLORS.primary : "white"} />
+          </Pressable>
+        </View>
 
-      {/* Friends Tab */}
-      {showFriends && (
-        <ScrollView
-          style={styles.friendsContainer}
-          contentContainerStyle={{ paddingTop: Platform.OS === "ios" ? 20 : 0 }}
-        >
-          <View style={styles.friendsHeader}>
-            <Text style={styles.friendsTitle}>My Friends</Text>
-            <Pressable style={styles.addFriendsButton} onPress={() => setSearchModalVisible(true)}>
-              <Ionicons name="person-add" size={18} color="white" style={{ marginRight: 6 }} />
-              <Text style={styles.addFriendsText}>Add Friends</Text>
-            </Pressable>
+        {/* Content based on active tab */}
+        {activeTab === "posts" && (
+          <View style={styles.postsContainer}>
+            {posts.length === 0 ? (
+              <Text style={styles.emptyStateText}>No posts yet</Text>
+            ) : (
+              <FlatList
+                data={posts}
+                keyExtractor={(item) => item.id}
+                renderItem={renderPostGridItem}
+                numColumns={3}
+                scrollEnabled={false}
+                contentContainerStyle={styles.postGrid}
+              />
+            )}
           </View>
+        )}
 
-          {friends.length === 0 ? (
-            <View style={styles.emptyFriends}>
-              <Ionicons name="people" size={40} color="#555" />
-              <Text style={styles.emptyText}>No friends yet</Text>
-              <Text style={styles.emptySubtext}>Add friends to see their profiles</Text>
-              <Pressable style={styles.findFriendsButton} onPress={() => setSearchModalVisible(true)}>
-                <Text style={styles.findFriendsText}>Find Friends</Text>
+        {activeTab === "friends" && (
+          <View style={styles.friendsContainer}>
+            {friends.length === 0 ? (
+              <Text style={styles.emptyStateText}>No friends yet</Text>
+            ) : (
+              <FlatList
+                data={friends}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable style={styles.friendItem} onPress={() => viewFriendProfile(item)}>
+                    <Image source={item.image} style={styles.friendImage} />
+                    <View style={styles.friendInfo}>
+                      <Text style={styles.friendName}>{item.name}</Text>
+                      <Text style={styles.friendUsername}>@{item.username}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                  </Pressable>
+                )}
+                contentContainerStyle={styles.friendsList}
+              />
+            )}
+          </View>
+        )}
+
+        {activeTab === "favorites" && (
+          <View style={styles.favoritesContainer}>
+            <Text style={styles.emptyStateText}>No favorite bars yet</Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Edit Username Modal */}
+      <Modal
+        visible={showEditUsername}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowEditUsername(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Change Username</Text>
+            <TextInput
+              style={styles.usernameInput}
+              placeholder="Enter new username"
+              placeholderTextColor="#999"
+              value={newUsername}
+              onChangeText={setNewUsername}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditUsername(false)
+                  setNewUsername("")
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.saveButton, !newUsername.trim() && styles.disabledButton]}
+                onPress={handleEditUsername}
+                disabled={!newUsername.trim()}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
               </Pressable>
             </View>
-          ) : (
-            <View style={styles.friendsList}>
-              {friends.map((item) => (
-                <Pressable key={item.id} style={styles.friendItem} onPress={() => handleViewFriendProfile(item)}>
-                  <Image source={item.image} style={styles.friendImage} />
-                  <View style={styles.friendInfo}>
-                    <Text style={styles.friendName}>{item.name}</Text>
-                    <Text style={styles.friendUsername}>@{item.username}</Text>
-                    <View style={styles.friendFavoritesPreview}>
-                      <Text style={styles.friendFavoritesCount}>
-                        {item.favorites.length} favorite {item.favorites.length === 1 ? "bar" : "bars"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#666" style={styles.chevron} />
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      )}
-
-      {/* Friend Search Modal */}
-      {renderSearchModal()}
+          </View>
+        </View>
+      </Modal>
 
       {/* Friend Profile Modal */}
-      {renderFriendProfile()}
-    </View>
+      <Modal
+        visible={showFriendProfile}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowFriendProfile(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.friendProfileContent}>
+            <View style={styles.friendProfileHeader}>
+              <Text style={styles.friendProfileTitle}>Friend Profile</Text>
+              <TouchableOpacity onPress={() => setShowFriendProfile(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedFriend && (
+              <View style={styles.friendProfileDetails}>
+                <Image source={selectedFriend.image} style={styles.friendProfileImage} />
+                <Text style={styles.friendProfileName}>{selectedFriend.name}</Text>
+                <Text style={styles.friendProfileUsername}>@{selectedFriend.username}</Text>
+
+                <View style={styles.friendFavorites}>
+                  <Text style={styles.friendFavoritesTitle}>Favorite Bars:</Text>
+                  {selectedFriend.favorites.length > 0 ? (
+                    selectedFriend.favorites.map((bar, index) => (
+                      <View key={index} style={styles.favoriteBarItem}>
+                        <Ionicons name="beer" size={16} color={COLORS.primary} />
+                        <Text style={styles.favoriteBarName}>{bar}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.noFavoritesText}>No favorite bars yet</Text>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.removeFriendButton} onPress={() => removeFriend(selectedFriend.id)}>
+                  <Text style={styles.removeFriendText}>Remove Friend</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Post Detail Modal */}
+      <Modal
+        visible={showPostDetail}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowPostDetail(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.postDetailContent}>
+            <View style={styles.postDetailHeader}>
+              <Text style={styles.postDetailTitle}>Post</Text>
+              <TouchableOpacity onPress={() => setShowPostDetail(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            {selectedPost && (
+              <ScrollView style={styles.postDetailScroll}>
+                <View style={styles.postDetailContainer}>
+                  {/* Post Header */}
+                  <View style={styles.postHeader}>
+                    <Image
+                      source={
+                        selectedPost.userImageUrl
+                          ? { uri: selectedPost.userImageUrl }
+                          : require("../../assets/images/default-profile.png")
+                      }
+                      style={styles.postUserImage}
+                    />
+                    <View style={styles.postHeaderInfo}>
+                      <Text style={styles.postUsername}>{selectedPost.username}</Text>
+                      <Text style={styles.postBarTag}>{selectedPost.barTag}</Text>
+                    </View>
+                    <Text style={styles.postDate}>{formatDate(selectedPost.timestamp)}</Text>
+                  </View>
+
+                  {/* Post Image */}
+                  <Image source={{ uri: selectedPost.imageUri }} style={styles.postDetailImage} />
+
+                  {/* Post Actions */}
+                  <View style={styles.postActions}>
+                    <TouchableOpacity style={styles.postAction} onPress={() => handleLikePost(selectedPost.id)}>
+                      <Ionicons
+                        name={selectedPost.likes.includes(user?.id || "anonymous") ? "heart" : "heart-outline"}
+                        size={24}
+                        color={selectedPost.likes.includes(user?.id || "anonymous") ? "#FF3B30" : "white"}
+                      />
+                      <Text style={styles.postActionText}>{selectedPost.likes.length}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.postAction}>
+                      <Ionicons name="chatbubble-outline" size={22} color="white" />
+                      <Text style={styles.postActionText}>{selectedPost.comments.length}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.postAction}>
+                      <Ionicons name="share-social-outline" size={24} color="white" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Post Caption */}
+                  <View style={styles.postCaption}>
+                    <Text style={styles.postCaptionUsername}>{selectedPost.username}</Text>
+                    <Text style={styles.postCaptionText}>{selectedPost.caption}</Text>
+                  </View>
+
+                  {/* Comments */}
+                  <View style={styles.commentsContainer}>
+                    <Text style={styles.commentsTitle}>Comments</Text>
+                    {selectedPost.comments.length > 0 ? (
+                      selectedPost.comments.map((comment) => (
+                        <View key={comment.id} style={styles.commentItem}>
+                          <Text style={styles.commentUsername}>{comment.username}</Text>
+                          <Text style={styles.commentText}>{comment.text}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.noCommentsText}>No comments yet</Text>
+                    )}
+                  </View>
+
+                  {/* Add Comment */}
+                  <View style={styles.addCommentContainer}>
+                    <TextInput
+                      style={styles.commentInput}
+                      placeholder="Add a comment..."
+                      placeholderTextColor="#999"
+                      value={newComment}
+                      onChangeText={setNewComment}
+                    />
+                    <TouchableOpacity
+                      style={[styles.postCommentButton, !newComment.trim() && styles.disabledButton]}
+                      onPress={addComment}
+                      disabled={!newComment.trim()}
+                    >
+                      <Text style={styles.postCommentText}>Post</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "black",
     flex: 1,
+    backgroundColor: "black",
   },
-  // Tab Navigation
-  tabBar: {
+  profileHeader: {
+    alignItems: "center",
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 10,
+  },
+  usernameContainer: {
+    alignItems: "center",
+    marginTop: 10,
+  },
+  username: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 5,
+  },
+  editUsernameButton: {
+    marginTop: 5,
+  },
+  editUsernameText: {
+    color: COLORS.primary,
+    fontSize: 14,
+  },
+  statsContainer: {
     flexDirection: "row",
+    width: "80%",
+    justifyContent: "space-around",
+    marginTop: 20,
+  },
+  statItem: {
+    alignItems: "center",
+  },
+  statNumber: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  statLabel: {
+    color: "#999",
+    fontSize: 14,
+  },
+  tabsContainer: {
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "#333",
     borderBottomWidth: 1,
     borderBottomColor: "#333",
-    backgroundColor: "#111",
   },
   tab: {
     flex: 1,
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
+    paddingVertical: 15,
   },
   activeTab: {
     borderBottomWidth: 2,
     borderBottomColor: COLORS.primary,
   },
-  tabText: {
-    color: "#999",
-    marginLeft: 6,
-    fontSize: 14,
+  postsContainer: {
+    minHeight: 200,
   },
-  activeTabText: {
-    color: COLORS.primary,
-    fontWeight: "500",
+  postGrid: {
+    padding: 1,
   },
-  // Profile Section
-  profileSection: {
-    alignItems: "center",
-    paddingTop: 30,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-  },
-  avatarContainer: {
+  postGridItem: {
+    width: (width - 6) / 3, // 3 columns with 1px spacing
+    height: (width - 6) / 3,
+    margin: 1,
     position: "relative",
-    marginBottom: 8,
   },
-  avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    borderWidth: 3,
-    borderColor: "#333",
+  postGridImage: {
+    width: "100%",
+    height: "100%",
   },
-  editAvatarBadge: {
+  postGridOverlay: {
     position: "absolute",
     bottom: 0,
+    left: 0,
     right: 0,
-    backgroundColor: COLORS.primary,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "black",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    padding: 4,
   },
-  changePhotoButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(74, 222, 128, 0.1)",
-    borderRadius: 16,
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  changePhotoText: {
-    color: COLORS.primary,
-    fontSize: 13,
-    textAlign: "center",
-  },
-  username: {
-    color: "white",
-    fontSize: 20,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(74, 222, 128, 0.1)",
-    borderRadius: 16,
-  },
-  editText: {
-    color: COLORS.primary,
-    fontSize: 13,
-  },
-  input: {
-    backgroundColor: "#222",
-    color: "white",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-    width: 200,
-    textAlign: "center",
-    fontSize: 16,
-  },
-  saveButton: {
-    backgroundColor: "rgba(74, 222, 128, 0.2)",
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  saveText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  signOutButton: {
-    backgroundColor: "orangered",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 20,
-    alignSelf: "center",
-  },
-  signOutText: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  // Favorites section styles
-  favoritesSection: {
-    padding: 20,
-  },
-  sectionTitle: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 15,
-  },
-  emptyFavorites: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#222",
-    padding: 30,
-    borderRadius: 10,
-  },
-  emptyText: {
-    color: "#888",
-    fontSize: 16,
-    marginTop: 10,
-  },
-  emptySubtext: {
-    color: "#666",
-    fontSize: 12,
-    marginTop: 5,
-  },
-  favoritesList: {
-    gap: 10,
-  },
-  favoriteBar: {
-    flexDirection: "row",
-    backgroundColor: "#222",
-    borderRadius: 10,
-    overflow: "hidden",
-    height: 80,
-    alignItems: "center",
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.primary,
-  },
-  barImage: {
-    width: 80,
-    height: 80,
-  },
-  barInfo: {
-    flex: 1,
-    paddingHorizontal: 12,
-  },
-  barName: {
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 5,
-  },
-  barStats: {
-    gap: 4,
-  },
-  statItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  statText: {
-    color: "#ccc",
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  chevron: {
-    marginRight: 10,
-  },
-  // Friends Tab
-  friendsContainer: {
-    flex: 1,
-  },
-  friendsHeader: {
+  postGridStats: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    paddingBottom: 15,
-    marginTop: Platform.OS === "ios" ? 30 : 10, // Added more top padding for iOS
+    paddingHorizontal: 8,
   },
-  friendsTitle: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  addFriendsButton: {
+  postGridStat: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: COLORS.primary,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
   },
-  addFriendsText: {
-    color: "black",
-    fontSize: 13,
-    fontWeight: "500",
+  postGridStatText: {
+    color: "white",
+    fontSize: 12,
+    marginLeft: 3,
   },
-  emptyFriends: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 30,
-    marginTop: 50, // Added more top margin
-  },
-  findFriendsButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginTop: 20,
-  },
-  findFriendsText: {
-    color: "black",
-    fontWeight: "600",
-    fontSize: 14,
+  friendsContainer: {
+    minHeight: 200,
   },
   friendsList: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 40,
+    paddingVertical: 10,
   },
   friendItem: {
     flexDirection: "row",
-    backgroundColor: "#222",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
     alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
   },
   friendImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 12,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
   },
   friendInfo: {
     flex: 1,
@@ -962,109 +757,86 @@ const styles = StyleSheet.create({
   },
   friendUsername: {
     color: "#999",
-    fontSize: 13,
-    marginBottom: 4,
+    fontSize: 14,
   },
-  friendFavoritesPreview: {
-    flexDirection: "row",
+  favoritesContainer: {
+    padding: 20,
     alignItems: "center",
-    marginTop: 4,
+    justifyContent: "center",
+    minHeight: 200,
   },
-  friendFavoritesCount: {
-    color: "#ccc",
-    fontSize: 12,
+  emptyStateText: {
+    color: "#999",
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 30,
   },
-  // Search Modal
-  searchModalContainer: {
+  modalOverlay: {
     flex: 1,
-    backgroundColor: "black",
-  },
-  searchModalHeader: {
-    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    paddingTop: Platform.OS === "ios" ? 20 : 16, // Added more top padding for iOS
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
   },
-  searchModalTitle: {
+  modalContent: {
+    backgroundColor: "#222",
+    borderRadius: 10,
+    padding: 20,
+    width: width * 0.8,
+  },
+  modalTitle: {
     color: "white",
     fontSize: 18,
     fontWeight: "bold",
+    marginBottom: 20,
+    textAlign: "center",
   },
-  modalBackButton: {
-    padding: 8,
-  },
-  searchInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#222",
-    margin: 16,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
+  usernameInput: {
+    backgroundColor: "#333",
+    borderRadius: 5,
+    padding: 12,
     color: "white",
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  modalButton: {
+    flex: 1,
     paddingVertical: 12,
-    fontSize: 16,
-  },
-  clearButton: {
-    padding: 4,
-  },
-  searchResultItem: {
-    flexDirection: "row",
+    borderRadius: 5,
     alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
   },
-  searchResultImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
+  cancelButton: {
+    backgroundColor: "#444",
+    marginRight: 10,
   },
-  searchResultInfo: {
-    flex: 1,
-  },
-  searchResultName: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  searchResultUsername: {
-    color: "#999",
-    fontSize: 13,
-  },
-  addFriendButton: {
+  saveButton: {
     backgroundColor: COLORS.primary,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
+    marginLeft: 10,
   },
-  emptySearchResults: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
+  disabledButton: {
+    opacity: 0.5,
   },
-  // Friend Profile Modal
-  friendProfileContainer: {
-    flex: 1,
-    backgroundColor: "black",
+  cancelButtonText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  saveButtonText: {
+    color: "black",
+    fontWeight: "bold",
+  },
+  friendProfileContent: {
+    backgroundColor: "#222",
+    borderRadius: 10,
+    width: width * 0.9,
+    maxHeight: "80%",
   },
   friendProfileHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
-    paddingTop: Platform.OS === "ios" ? 20 : 16, // Added more top padding for iOS
+    alignItems: "center",
+    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: "#333",
   },
@@ -1073,17 +845,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  friendProfileInfo: {
-    alignItems: "center",
+  closeButton: {
+    padding: 5,
+  },
+  friendProfileDetails: {
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    alignItems: "center",
   },
   friendProfileImage: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    marginBottom: 12,
+    marginBottom: 15,
   },
   friendProfileName: {
     color: "white",
@@ -1092,26 +865,179 @@ const styles = StyleSheet.create({
   },
   friendProfileUsername: {
     color: "#999",
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: 16,
+    marginBottom: 20,
   },
-  friendFavoritesSection: {
-    padding: 20,
+  friendFavorites: {
+    width: "100%",
+    marginBottom: 20,
   },
-  removeFriendButton: {
+  friendFavoritesTitle: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+  favoriteBarItem: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#333",
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 8,
+  },
+  favoriteBarName: {
+    color: "white",
+    marginLeft: 8,
+  },
+  noFavoritesText: {
+    color: "#999",
+    fontStyle: "italic",
+  },
+  removeFriendButton: {
     backgroundColor: "#FF3B30",
-    paddingVertical: 12,
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 30,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+    marginTop: 10,
   },
   removeFriendText: {
     color: "white",
-    fontWeight: "600",
+    fontWeight: "bold",
+  },
+  postDetailContent: {
+    backgroundColor: "#222",
+    borderRadius: 10,
+    width: width * 0.9,
+    maxHeight: "90%",
+  },
+  postDetailHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  postDetailTitle: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  postDetailScroll: {
+    maxHeight: "100%",
+  },
+  postDetailContainer: {
+    padding: 15,
+  },
+  postHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  postUserImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  postHeaderInfo: {
+    flex: 1,
+  },
+  postUsername: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+  postBarTag: {
+    color: COLORS.primary,
+    fontSize: 13,
+  },
+  postDate: {
+    color: "#999",
+    fontSize: 12,
+  },
+  postDetailImage: {
+    width: "100%",
+    height: width * 0.8,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  postActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  postAction: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  postActionText: {
+    color: "white",
+    marginLeft: 5,
+    fontSize: 14,
+  },
+  postCaption: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  postCaptionUsername: {
+    color: "white",
+    fontWeight: "bold",
+    marginBottom: 5,
+  },
+  postCaptionText: {
+    color: "white",
+  },
+  commentsContainer: {
+    paddingVertical: 10,
+  },
+  commentsTitle: {
+    color: "white",
     fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+  commentItem: {
+    marginBottom: 10,
+  },
+  commentUsername: {
+    color: "white",
+    fontWeight: "bold",
+    marginBottom: 2,
+  },
+  commentText: {
+    color: "white",
+  },
+  noCommentsText: {
+    color: "#999",
+    fontStyle: "italic",
+  },
+  addCommentContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 15,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: "#333",
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    color: "white",
+    marginRight: 10,
+  },
+  postCommentButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  postCommentText: {
+    color: "black",
+    fontWeight: "bold",
   },
 })
