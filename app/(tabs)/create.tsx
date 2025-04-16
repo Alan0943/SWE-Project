@@ -13,6 +13,9 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Dimensions,
+  FlatList,
+  TouchableOpacity,
+  Modal,
 } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 import { useUser } from "@clerk/clerk-expo"
@@ -21,7 +24,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useRouter } from "expo-router"
 import { COLORS } from "@/constants/theme"
 
-const { width } = Dimensions.get("window")
+const { width, height } = Dimensions.get("window")
 
 // Post type definition
 interface Post {
@@ -168,9 +171,33 @@ export default function Create() {
     }
   }
 
+  // Toggle bar picker modal
+  const toggleBarPicker = () => {
+    setShowBarPicker(!showBarPicker)
+  }
+
+  // Select a bar and close the picker
+  const selectBar = (barName: string) => {
+    setSelectedBarTag(barName)
+    setShowBarPicker(false)
+  }
+
+  // Render a bar item
+  const renderBarItem = ({ item }: { item: { name: string; image: any } }) => (
+    <TouchableOpacity
+      style={[styles.barItem, selectedBarTag === item.name && styles.selectedBarItem]}
+      onPress={() => selectBar(item.name)}
+      activeOpacity={0.7}
+    >
+      <Image source={item.image} style={styles.barItemImage} />
+      <Text style={[styles.barItemText, selectedBarTag === item.name && styles.selectedBarItemText]}>{item.name}</Text>
+      {selectedBarTag === item.name && <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />}
+    </TouchableOpacity>
+  )
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
         <View style={styles.header}>
           <View style={{ width: 24 }} />
@@ -207,33 +234,11 @@ export default function Create() {
           <Text style={styles.charCount}>{caption.length}/200</Text>
 
           {/* Bar Tag Selection */}
-          <Pressable style={styles.barTagButton} onPress={() => setShowBarPicker(!showBarPicker)}>
+          <Pressable style={styles.barTagButton} onPress={toggleBarPicker}>
             <Ionicons name="location" size={24} color={COLORS.primary} />
             <Text style={styles.barTagText}>{selectedBarTag ? selectedBarTag : "Tag a Bar (Required)"}</Text>
-            <Ionicons name={showBarPicker ? "chevron-up" : "chevron-down"} size={20} color="#999" />
+            <Ionicons name="chevron-down" size={20} color="#999" />
           </Pressable>
-
-          {/* Bar Picker */}
-          {showBarPicker && (
-            <View style={styles.barPickerContainer}>
-              {bars.map((bar) => (
-                <Pressable
-                  key={bar.name}
-                  style={[styles.barItem, selectedBarTag === bar.name && styles.selectedBarItem]}
-                  onPress={() => {
-                    setSelectedBarTag(bar.name)
-                    setShowBarPicker(false)
-                  }}
-                >
-                  <Image source={bar.image} style={styles.barItemImage} />
-                  <Text style={[styles.barItemText, selectedBarTag === bar.name && styles.selectedBarItemText]}>
-                    {bar.name}
-                  </Text>
-                  {selectedBarTag === bar.name && <Ionicons name="checkmark-circle" size={20} color={COLORS.primary} />}
-                </Pressable>
-              ))}
-            </View>
-          )}
 
           {/* Post Button */}
           <Pressable
@@ -252,6 +257,33 @@ export default function Create() {
           </Pressable>
         </View>
       </ScrollView>
+
+      {/* Bar Picker Modal */}
+      <Modal
+        visible={showBarPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowBarPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select a Bar</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setShowBarPicker(false)}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={bars}
+              renderItem={renderBarItem}
+              keyExtractor={(item) => item.name}
+              style={styles.barList}
+              showsVerticalScrollIndicator={true}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -260,6 +292,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "black",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 30,
   },
   header: {
     flexDirection: "row",
@@ -332,16 +368,56 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
   },
-  barPickerContainer: {
+  postButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    padding: 15,
+    alignItems: "center",
+    marginTop: 15,
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  postButtonText: {
+    color: "black",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
     backgroundColor: "#222",
-    borderRadius: 10,
-    marginBottom: 15,
-    maxHeight: 200,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: height * 0.7,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  modalTitle: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  closeButton: {
+    padding: 5,
+  },
+  barList: {
+    maxHeight: height * 0.6,
   },
   barItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: "#333",
   },
@@ -362,20 +438,5 @@ const styles = StyleSheet.create({
   selectedBarItemText: {
     color: COLORS.primary,
     fontWeight: "bold",
-  },
-  postButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    padding: 15,
-    alignItems: "center",
-    marginTop: 15,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  postButtonText: {
-    color: "black",
-    fontWeight: "bold",
-    fontSize: 16,
   },
 })

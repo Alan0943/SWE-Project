@@ -288,7 +288,7 @@ export default function Index() {
                     bottom: -4,
                     borderRadius: 16,
                     backgroundColor: "limegreen",
-                    opacity: 0.4,
+                    opacity: .7,
                     shadowColor: "limegreen",
                     shadowOffset: { width: 0, height: 0 },
                     shadowOpacity: 1,
@@ -302,7 +302,7 @@ export default function Index() {
 
                 <View
                   style={{
-                    borderWidth: 2,
+                    borderWidth: 0,
                     borderColor: "limegreen",
                     borderRadius: 12,
                     height: cardHeight,
@@ -489,7 +489,7 @@ export default function Index() {
                                 fontStyle: "italic",
                               }}
                             >
-                              {isExpanded ? "Tap to close >       " : "Tap for options"}{" "}
+                              {isExpanded ? "Tap to close >      " : "Tap for options"}{" "}
                               <Ionicons
                                 name={isExpanded ? "chevron-forward" : "chevron-back"}
                                 size={fontSize.small}
