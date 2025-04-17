@@ -1,17 +1,30 @@
 "use client"
 
-import { Image, Text, View, ScrollView, Pressable, ActivityIndicator, Animated, Dimensions } from "react-native"
+import {
+  Image,
+  Text,
+  View,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  RefreshControl,
+} from "react-native"
 import { styles } from "../../styles/auth.styles"
 import { useRouter } from "expo-router"
 import { useFavorites } from "../../src/contexts/FavoritesContext"
-import { useEffect, useRef, useState } from "react"
+import { useBarData } from "../../src/contexts/BarDataContext"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { Ionicons } from "@expo/vector-icons"
 
 export default function Index() {
   const router = useRouter()
   const { favorites, toggleFavorite } = useFavorites()
+  const { bars, isLoading, refreshBars } = useBarData()
   const [imagesLoaded, setImagesLoaded] = useState(false)
   const [loadedImages, setLoadedImages] = useState<{ [key: string]: boolean }>({})
+  const [refreshing, setRefreshing] = useState(false)
 
   // Device detection for responsive adjustments
   const [isPhone, setIsPhone] = useState(true)
@@ -40,59 +53,6 @@ export default function Index() {
   const slideAnimations = useRef<{ [key: string]: Animated.Value }>({})
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
 
-  // ✅ Bar data
-  const bars = [
-    {
-      name: "MacDinton's Irish Pub",
-      waitTime: 21,
-      coverCharge: 10,
-      image: require("../../assets/images/macdintons.jpg"),
-      route: "/(bars)/MacDintons",
-    },
-    {
-      name: "JJ's Tavern",
-      waitTime: 11,
-      coverCharge: 10,
-      image: require("../../assets/images/jjs.jpg"),
-      route: "/(bars)/JJsTavern",
-    },
-    {
-      name: "Vivid Music Hall",
-      waitTime: 0,
-      coverCharge: 0,
-      image: require("../../assets/images/vivid.jpg"),
-      route: "/(bars)/VividMusicHall",
-    },
-    {
-      name: "DTF",
-      waitTime: 15,
-      coverCharge: 20,
-      image: require("../../assets/images/dtf.jpg"),
-      route: "/(bars)/DTF",
-    },
-    {
-      name: "Cantina",
-      waitTime: 35,
-      coverCharge: 20,
-      image: require("../../assets/images/Cantina.jpg"),
-      route: "/(bars)/Cantina",
-    },
-    {
-      name: "Lil Rudy's",
-      waitTime: 0,
-      coverCharge: 5,
-      image: require("../../assets/images/LilRudys.jpg"),
-      route: "/(bars)/LilRudys",
-    },
-    {
-      name: "Range",
-      waitTime: 20,
-      coverCharge: 10,
-      image: require("../../assets/images/range.jpg"),
-      route: "/(bars)/Range",
-    },
-  ]
-
   // Initialize animation values for each bar
   useEffect(() => {
     const animations: { [key: string]: Animated.Value } = {}
@@ -100,7 +60,7 @@ export default function Index() {
       animations[bar.name] = new Animated.Value(0) // 0 = not expanded, 1 = expanded
     })
     slideAnimations.current = animations
-  }, [])
+  }, [bars])
 
   // Enhanced image preloading
   useEffect(() => {
@@ -114,18 +74,10 @@ export default function Index() {
     // Preload all images before showing content
     const preloadImages = async () => {
       try {
-        // Create an array of promises for each image prefetch
-        const prefetchPromises = bars.map((bar) => {
-          const img = Image.resolveAssetSource(bar.image)
-          return Image.prefetch(img.uri).then(() => {
-            // Mark this specific image as loaded
-            setLoadedImages((prev) => ({ ...prev, [bar.name]: true }))
-            return true
-          })
+        // Mark all images as loaded to avoid errors
+        bars.forEach((bar) => {
+          setLoadedImages((prev) => ({ ...prev, [bar.name]: true }))
         })
-
-        // Wait for all images to be prefetched
-        await Promise.all(prefetchPromises)
         setImagesLoaded(true)
       } catch (error) {
         console.error("Error preloading images:", error)
@@ -144,7 +96,7 @@ export default function Index() {
     }, 2000) // 2 second fallback
 
     return () => clearTimeout(timeoutId)
-  }, [])
+  }, [bars])
 
   const getWaitColor = (minutes: number) => {
     if (minutes <= 10) return "limegreen"
@@ -208,8 +160,38 @@ export default function Index() {
     }
   }
 
+  // Handle pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await refreshBars()
+    } catch (error) {
+      console.error("Error refreshing bars:", error)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [refreshBars])
+
+  // Format the last updated time
+  const formatLastUpdated = (timestamp: number) => {
+    const now = Date.now()
+    const diffInMinutes = Math.floor((now - timestamp) / (1000 * 60))
+
+    if (diffInMinutes < 1) {
+      return "Just now"
+    } else if (diffInMinutes < 60) {
+      return `${diffInMinutes}m ago`
+    } else if (diffInMinutes < 1440) {
+      const hours = Math.floor(diffInMinutes / 60)
+      return `${hours}h ago`
+    } else {
+      const days = Math.floor(diffInMinutes / 1440)
+      return `${days}d ago`
+    }
+  }
+
   // If images are still loading, show a loading screen
-  if (!imagesLoaded) {
+  if (isLoading || !imagesLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "black" }}>
         <Image
@@ -228,14 +210,20 @@ export default function Index() {
   }
 
   // Calculate responsive dimensions
-  const cardHeight = 125 // Fixed height as requested
-  const leftImageWidth = cardHeight // Make image width equal to height for square aspect ratio
-  const cardWidth = isPhone ? "94%" : "92%"
-  const optionButtonHeight = isPhone ? 32 : 36
-  const fontSize = isPhone ? { title: 14, text: 11, small: 9 } : { title: 16, text: 12, small: 10 }
+  const cardHeight = 140 // Increased height to match the screenshot
+  const leftImageWidth = cardHeight * 0.8 // Make image width slightly less than height for better proportions
+  const cardWidth = isPhone ? "94%" : screenWidth > 1200 ? 1200 : screenWidth * 0.98
+  const optionButtonHeight = isPhone ? 36 : 40 // Increased button height
+  const fontSize = isPhone ? { title: 16, text: 13, small: 10 } : { title: 18, text: 14, small: 11 } // Increased font sizes
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingVertical: 20 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingVertical: 20, alignItems: "center" }}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4ADE80" colors={["#4ADE80"]} />
+      }
+    >
       <View style={{ alignItems: "center", marginBottom: 16 }}>
         <Image
           source={require("../../assets/images/TailGatorLogo.png")}
@@ -248,7 +236,7 @@ export default function Index() {
         />
       </View>
 
-      <View className="px-4">
+      <View className="w-full max-w-[1200px] space-y-4">
         <View className="space-y-4">
           {bars.map((bar, index) => {
             const isFavorite = favorites.includes(bar.name)
@@ -264,10 +252,10 @@ export default function Index() {
               outputRange: [0, -100], // Slide out to the left
             })
 
-            // Animation for options panel opacity
-            const optionsOpacity = slideAnim.interpolate({
-              inputRange: [0, 0.5, 1],
-              outputRange: [0, 0, 1],
+            // Animation for options panel position - slide in from right
+            const optionsRightPosition = slideAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["100%", "0%"], // Slide in from right (off-screen to on-screen)
             })
 
             return (
@@ -288,7 +276,7 @@ export default function Index() {
                     bottom: -4,
                     borderRadius: 16,
                     backgroundColor: "limegreen",
-                    opacity: .7,
+                    opacity: 0.7,
                     shadowColor: "limegreen",
                     shadowOffset: { width: 0, height: 0 },
                     shadowOpacity: 1,
@@ -297,8 +285,6 @@ export default function Index() {
                     zIndex: -1,
                   }}
                 />
-
-          
 
                 <View
                   style={{
@@ -397,91 +383,105 @@ export default function Index() {
                           style={{
                             flex: 1,
                             padding: 12,
-                            justifyContent: "center",
+                            justifyContent: "space-between", // Changed to space-between for better vertical spacing
+                            height: "100%",
                           }}
                         >
-                          <Text
-                            style={{
-                              color: "white",
-                              fontSize: fontSize.title,
-                              fontWeight: "700",
-                              marginBottom: 8,
-                              textShadowColor: "rgba(0, 0, 0, 0.75)",
-                              textShadowOffset: { width: 1, height: 1 },
-                              textShadowRadius: 2,
-                            }}
-                            numberOfLines={2}
-                          >
-                            {bar.name}
-                          </Text>
-
-                          {/* Status indicators */}
-                          <View style={{ marginTop: 4 }}>
-                            <View
+                          <View>
+                            <Text
                               style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                marginBottom: 6,
+                                color: "white",
+                                fontSize: fontSize.title,
+                                fontWeight: "700",
+                                marginBottom: 8,
+                                textShadowColor: "rgba(0, 0, 0, 0.75)",
+                                textShadowOffset: { width: 1, height: 1 },
+                                textShadowRadius: 2,
                               }}
+                              numberOfLines={2}
                             >
-                              <Ionicons
-                                name="time-outline"
-                                size={fontSize.text + 2}
-                                color={getWaitColor(bar.waitTime)}
-                              />
-                              <Text
+                              {bar.name}
+                            </Text>
+
+                            {/* Status indicators */}
+                            <View style={{ marginTop: 4 }}>
+                              <View
                                 style={{
-                                  fontSize: fontSize.text,
-                                  color: "#ccc",
-                                  marginLeft: 4,
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  marginBottom: 6,
                                 }}
                               >
-                                Wait:{" "}
-                                <Text style={{ color: getWaitColor(bar.waitTime), fontWeight: "600" }}>
-                                  {bar.waitTime === 0
-                                    ? "Short Wait ⏱️"
-                                    : `${bar.waitTime} minutes${bar.waitTime > 20 ? " ⚠️" : ""}`}
+                                <Ionicons
+                                  name="time-outline"
+                                  size={fontSize.text + 2}
+                                  color={getWaitColor(bar.waitTime)}
+                                />
+                                <Text
+                                  style={{
+                                    fontSize: fontSize.text,
+                                    color: "#ccc",
+                                    marginLeft: 4,
+                                  }}
+                                >
+                                  Wait:{" "}
+                                  <Text style={{ color: getWaitColor(bar.waitTime), fontWeight: "600" }}>
+                                    {bar.waitTime === 0
+                                      ? "Short Wait ⏱️"
+                                      : `${bar.waitTime} minutes${bar.waitTime > 20 ? " ⚠️" : ""}`}
+                                  </Text>
                                 </Text>
-                              </Text>
-                            </View>
+                              </View>
 
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                              }}
-                            >
-                              <Ionicons
-                                name="cash-outline"
-                                size={fontSize.text + 2}
-                                color={getCoverColor(bar.coverCharge)}
-                              />
-                              <Text
+                              <View
                                 style={{
-                                  fontSize: fontSize.text,
-                                  color: "#ccc",
-                                  marginLeft: 4,
+                                  flexDirection: "row",
+                                  alignItems: "center",
                                 }}
                               >
-                                Cover:{" "}
-                                <Text style={{ color: getCoverColor(bar.coverCharge), fontWeight: "600" }}>
-                                  {bar.coverCharge === 0
-                                    ? "Free Entry 🎉"
-                                    : `${bar.coverCharge}${bar.coverCharge >= 20 ? " 🚨" : ""}`}
+                                <Ionicons
+                                  name="cash-outline"
+                                  size={fontSize.text + 2}
+                                  color={getCoverColor(bar.coverCharge)}
+                                />
+                                <Text
+                                  style={{
+                                    fontSize: fontSize.text,
+                                    color: "#ccc",
+                                    marginLeft: 4,
+                                  }}
+                                >
+                                  Cover:{" "}
+                                  <Text style={{ color: getCoverColor(bar.coverCharge), fontWeight: "600" }}>
+                                    {bar.coverCharge === 0
+                                      ? "Free Entry 🎉"
+                                      : `$${bar.coverCharge}${bar.coverCharge >= 20 ? " 🚨" : ""}`}
+                                  </Text>
                                 </Text>
-                              </Text>
+                              </View>
                             </View>
                           </View>
 
-                          {/* Tap indicator */}
                           <View
                             style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
                               alignItems: "flex-end",
-                              position: "absolute",
-                              bottom: 8,
-                              right: 8,
+                              width: "100%",
                             }}
                           >
+                            {/* Last updated indicator */}
+                            <Text
+                              style={{
+                                color: "rgba(255,255,255,0.4)",
+                                fontSize: fontSize.small,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Updated: {formatLastUpdated(bar.lastUpdated)}
+                            </Text>
+
+                            {/* Show appropriate text based on expanded state */}
                             <Text
                               style={{
                                 color: "rgba(255,255,255,0.6)",
@@ -489,7 +489,7 @@ export default function Index() {
                                 fontStyle: "italic",
                               }}
                             >
-                              {isExpanded ? "Tap to close >      " : "Tap for options"}{" "}
+                              {isExpanded ? " " : "Tap for options "}
                               <Ionicons
                                 name={isExpanded ? "chevron-forward" : "chevron-back"}
                                 size={fontSize.small}
@@ -534,15 +534,20 @@ export default function Index() {
                       backgroundColor: "#333",
                       justifyContent: "center",
                       paddingHorizontal: 10,
-                      opacity: optionsOpacity,
                       overflow: "hidden",
                       borderTopRightRadius: 10,
                       borderBottomRightRadius: 10,
+                      transform: [{ translateX: optionsRightPosition }],
+                      // Add pointer events to make this view only interactive when expanded
+                      pointerEvents: isExpanded ? "auto" : "none",
                     }}
                   >
                     <Pressable
                       onPress={() => {
-                        router.push("/report" as any)
+                        router.push({
+                          pathname: "/report",
+                          params: { barName: bar.name },
+                        } as any)
                       }}
                       style={({ pressed }) => ({
                         opacity: pressed ? 0.5 : 1,

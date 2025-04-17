@@ -88,7 +88,9 @@ export default function MacDintons() {
   const openWebsite = () => {
     Linking.openURL(barDetails.website)
   }
-
+  const handleBackPress = () => {
+    router.push("/(tabs)/bars")
+  }
   return (
     <ScrollView style={styles.container}>
       {/* Header with back button and favorite */}

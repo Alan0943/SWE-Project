@@ -2,7 +2,8 @@ import { Stack } from "expo-router";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { ClerkProvider, ClerkLoaded } from '@clerk/clerk-expo';
 import { tokenCache } from "@/cache";
-import { FavoritesProvider } from '../src/contexts/FavoritesContext'; // ✅ Import the context
+import { FavoritesProvider } from '../src/contexts/FavoritesContext';
+import { BarDataProvider } from '../src/contexts/BarDataContext'; // ✅ Import the BarDataContext
 import React from 'react';
 import { Slot } from "expo-router";
 
@@ -20,11 +21,13 @@ export default function RootLayout() {
     <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
       <ClerkLoaded>
         <SafeAreaProvider>
-          <FavoritesProvider>
-            <SafeAreaView style={{ flex: 1, backgroundColor: "black" }}>
-              <Slot />
-            </SafeAreaView>
-          </FavoritesProvider>
+          <BarDataProvider> 
+            <FavoritesProvider>
+              <SafeAreaView style={{ flex: 1, backgroundColor: "black" }}>
+                <Slot />
+              </SafeAreaView>
+            </FavoritesProvider>
+          </BarDataProvider>
         </SafeAreaProvider>
       </ClerkLoaded>
     </ClerkProvider>

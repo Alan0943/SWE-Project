@@ -19,33 +19,7 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "@/constants/theme"
-
-// Define the report type
-type Report = {
-  id: string
-  barName: string
-  waitTime: number
-  coverCharge: number
-  timestamp: string
-}
-
-// Define the type for the report data without id and timestamp
-type ReportData = Omit<Report, "id" | "timestamp">
-
-// In a real app, this would be connected to a backend
-// For this demo, we'll use a simple in-memory store
-const reportStore = {
-  reports: [] as Report[],
-  addReport: (report: ReportData) => {
-    reportStore.reports.push({
-      ...report,
-      timestamp: new Date().toISOString(),
-      id: Math.random().toString(36).substring(2, 9),
-    })
-    console.log("Report added:", report)
-    console.log("Total reports:", reportStore.reports.length)
-  },
-}
+import { useBarData } from "../src/contexts/BarDataContext"
 
 // Helper function to ensure we have a string
 const ensureString = (value: string | string[] | null | undefined): string => {
@@ -58,79 +32,33 @@ const ensureString = (value: string | string[] | null | undefined): string => {
 export default function Report() {
   const router = useRouter()
   const params = useLocalSearchParams()
-  const [selectedBar, setSelectedBar] = useState(ensureString(params.barName))
+  const { bars, submitReport } = useBarData()
+
+  const [selectedBarId, setSelectedBarId] = useState("")
+  const [selectedBarName, setSelectedBarName] = useState(ensureString(params.barName))
   const [waitTime, setWaitTime] = useState("")
   const [coverCharge, setCoverCharge] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [showBarPicker, setShowBarPicker] = useState(false)
 
-  // Bar data - same as in index.tsx
-  const bars = [
-    {
-      name: "MacDinton's Irish Pub",
-      waitTime: 21,
-      coverCharge: 10,
-      image: require("../assets/images/macdintons.jpg"),
-      route: "/(tabs)/MacDintons",
-    },
-    {
-      name: "JJ's Tavern",
-      waitTime: 11,
-      coverCharge: 10,
-      image: require("../assets/images/jjs.jpg"),
-      route: "/(tabs)/JJsTavern",
-    },
-    {
-      name: "Vivid Music Hall",
-      waitTime: 0,
-      coverCharge: 0,
-      image: require("../assets/images/vivid.jpg"),
-      route: "/(tabs)/VividMusicHall",
-    },
-    {
-      name: "DTF",
-      waitTime: 15,
-      coverCharge: 20,
-      image: require("../assets/images/dtf.jpg"),
-      route: "/(tabs)/DTF",
-    },
-    {
-      name: "Cantina",
-      waitTime: 35,
-      coverCharge: 20,
-      image: require("../assets/images/Cantina.jpg"),
-      route: "/Cantina",
-    },
-    {
-      name: "Lil Rudy's",
-      waitTime: 0,
-      coverCharge: 5,
-      image: require("../assets/images/LilRudys.jpg"),
-      route: "/(tabs)/LilRudys",
-    },
-    {
-      name: "Range",
-      waitTime: 20,
-      coverCharge: 10,
-      image: require("../assets/images/range.jpg"),
-      route: "/Range",
-    },
-  ]
-
   // If a bar was passed in the params, set it as the selected bar
   useEffect(() => {
-    console.log("Params barName:", params.barName)
     if (params.barName) {
       const barName = ensureString(params.barName)
-      console.log("Setting selected bar to:", barName)
-      setSelectedBar(barName)
-    }
-  }, [params.barName])
+      setSelectedBarName(barName)
 
-  const handleSubmit = () => {
+      // Find the bar ID
+      const bar = bars.find((b) => b.name === barName)
+      if (bar) {
+        setSelectedBarId(bar.id)
+      }
+    }
+  }, [params.barName, bars])
+
+  const handleSubmit = async () => {
     // Validate inputs
-    if (!selectedBar) {
+    if (!selectedBarId) {
       Alert.alert("Error", "Please select a bar")
       return
     }
@@ -150,33 +78,22 @@ export default function Report() {
     // Submit the report
     setIsSubmitting(true)
 
-    // Simulate API call
-    setTimeout(() => {
-      try {
-        reportStore.addReport({
-          barName: selectedBar,
-          waitTime: waitTimeNum,
-          coverCharge: coverChargeNum,
-        })
+    try {
+      await submitReport(selectedBarId, waitTimeNum, coverChargeNum)
+      setIsSuccess(true)
 
-        setIsSuccess(true)
-
-        // Reset form after 1.5 seconds
-        setTimeout(() => {
-          setIsSuccess(false)
-          setWaitTime("")
-          setCoverCharge("")
-
-          // In a real app, this would update the global state
-          // For now, we'll just navigate back
-          router.push("/(tabs)/bars")
-        }, 1500)
-      } catch (error) {
-        Alert.alert("Error", "Failed to submit report. Please try again.")
-      } finally {
-        setIsSubmitting(false)
-      }
-    }, 1000)
+      // Reset form after 1.5 seconds
+      setTimeout(() => {
+        setIsSuccess(false)
+        setWaitTime("")
+        setCoverCharge("")
+        router.push("/(tabs)/bars")
+      }, 1500)
+    } catch (error) {
+      Alert.alert("Error", "Failed to submit report. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (isSuccess) {
@@ -215,7 +132,7 @@ export default function Report() {
           <View style={styles.formGroup}>
             <Text style={styles.label}>Select Bar</Text>
             <Pressable style={styles.customPickerButton} onPress={() => setShowBarPicker(true)}>
-              <Text style={styles.customPickerText}>{selectedBar || "Select a bar..."}</Text>
+              <Text style={styles.customPickerText}>{selectedBarName || "Select a bar..."}</Text>
               <Ionicons name="chevron-down" size={20} color="#999" />
             </Pressable>
           </View>
@@ -245,9 +162,9 @@ export default function Report() {
           </View>
 
           <Pressable
-            style={[styles.submitButton, (isSubmitting || !selectedBar) && styles.submitButtonDisabled]}
+            style={[styles.submitButton, (isSubmitting || !selectedBarId) && styles.submitButtonDisabled]}
             onPress={handleSubmit}
-            disabled={isSubmitting || !selectedBar}
+            disabled={isSubmitting || !selectedBarId}
           >
             {isSubmitting ? (
               <ActivityIndicator color="black" size="small" />
@@ -282,20 +199,22 @@ export default function Report() {
             </View>
 
             <FlatList
+              key="bar-picker-list"
               data={bars}
-              keyExtractor={(item) => item.name}
+              keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.barItem, selectedBar === item.name && styles.selectedBarItem]}
+                  style={[styles.barItem, selectedBarName === item.name && styles.selectedBarItem]}
                   onPress={() => {
-                    setSelectedBar(item.name)
+                    setSelectedBarId(item.id)
+                    setSelectedBarName(item.name)
                     setShowBarPicker(false)
                   }}
                 >
-                  <Text style={[styles.barItemText, selectedBar === item.name && styles.selectedBarItemText]}>
+                  <Text style={[styles.barItemText, selectedBarName === item.name && styles.selectedBarItemText]}>
                     {item.name}
                   </Text>
-                  {selectedBar === item.name && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                  {selectedBarName === item.name && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
                 </TouchableOpacity>
               )}
             />

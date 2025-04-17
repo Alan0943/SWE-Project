@@ -26,6 +26,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as ImagePicker from "expo-image-picker"
 
 const { width, height } = Dimensions.get("window")
+const isPhone = width < 600 // Simple check for screen width
 
 // Post type definition
 interface Post {
@@ -751,6 +752,7 @@ export default function Profile() {
               </ScrollView>
             ) : (
               <FlatList
+                key={`posts-grid-${isPhone ? "phone" : "tablet"}`}
                 ref={postsListRef}
                 data={posts}
                 keyExtractor={(item) => item.id}

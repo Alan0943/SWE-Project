@@ -275,6 +275,7 @@ export default function Create() {
             </View>
 
             <FlatList
+              key="create-bar-list"
               data={bars}
               renderItem={renderBarItem}
               keyExtractor={(item) => item.name}
