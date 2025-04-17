@@ -1,6 +1,5 @@
-import { View, Text, StyleSheet, Pressable, Linking, Alert } from "react-native"
+import { View, Text, StyleSheet, Pressable, Linking, Alert, Platform } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { COLORS } from "@/constants/theme"
 
 type RideButtonsProps = {
   barName: string
@@ -9,8 +8,7 @@ type RideButtonsProps = {
   longitude?: number
 }
 
-// Hardcoded coordinates for demo purposes
-// In a real app, you would use a geocoding service to convert addresses to coordinates
+// Expanded coordinates for all bars
 const barCoordinates: Record<string, { lat: number; lng: number }> = {
   "MacDinton's Irish Pub": { lat: 29.652, lng: -82.325 },
   "JJ's Tavern": { lat: 29.6522, lng: -82.326 },
@@ -19,6 +17,11 @@ const barCoordinates: Record<string, { lat: number; lng: number }> = {
   Cantina: { lat: 29.6525, lng: -82.3255 },
   "Lil Rudy's": { lat: 29.651, lng: -82.324 },
   Range: { lat: 29.649, lng: -82.3235 },
+}
+
+// Helper function to detect if we're running in a web browser
+const isWeb = () => {
+  return Platform.OS === "web"
 }
 
 export default function RideButtons({ barName, address }: RideButtonsProps) {
@@ -33,7 +36,13 @@ export default function RideButtons({ barName, address }: RideButtonsProps) {
     const uberWebURL = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${coordinates.lat}&dropoff[longitude]=${coordinates.lng}&dropoff[nickname]=${encodeURIComponent(barName)}`
 
     try {
-      // Check if Uber app is installed
+      // If we're on web, directly open the web URL
+      if (isWeb()) {
+        window.open(uberWebURL, "_blank")
+        return
+      }
+
+      // For mobile platforms, check if Uber app is installed
       const supported = await Linking.canOpenURL(uberURL)
 
       if (supported) {
@@ -45,7 +54,7 @@ export default function RideButtons({ barName, address }: RideButtonsProps) {
       }
     } catch (error) {
       console.error("Error opening Uber:", error)
-      Alert.alert("Error", "Could not open Uber. Please make sure it's installed.")
+      Alert.alert("Error", "Could not open Uber. Please try again.")
     }
   }
 
@@ -57,7 +66,13 @@ export default function RideButtons({ barName, address }: RideButtonsProps) {
     const lyftWebURL = `https://ride.lyft.com/ridetype?id=lyft&destination[latitude]=${coordinates.lat}&destination[longitude]=${coordinates.lng}&pickup=my_location`
 
     try {
-      // Check if Lyft app is installed
+      // If we're on web, directly open the web URL
+      if (isWeb()) {
+        window.open(lyftWebURL, "_blank")
+        return
+      }
+
+      // For mobile platforms, check if Lyft app is installed
       const supported = await Linking.canOpenURL(lyftURL)
 
       if (supported) {
@@ -69,7 +84,7 @@ export default function RideButtons({ barName, address }: RideButtonsProps) {
       }
     } catch (error) {
       console.error("Error opening Lyft:", error)
-      Alert.alert("Error", "Could not open Lyft. Please make sure it's installed.")
+      Alert.alert("Error", "Could not open Lyft. Please try again.")
     }
   }
 
@@ -100,7 +115,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   title: {
-  color: "#4ADE80",
+    color: "#4ADE80",
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 12,

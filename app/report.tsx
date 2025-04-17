@@ -116,7 +116,7 @@ export default function Report() {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Pressable onPress={() => router.push("/(tabs)/bars")} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color="white" />
           </Pressable>
           <Text style={styles.headerTitle}>Submit Report</Text>

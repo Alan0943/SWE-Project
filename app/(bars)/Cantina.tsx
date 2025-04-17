@@ -217,9 +217,6 @@ export default function Cantina() {
         </Pressable>
       </View>
 
-      {/* Ride Buttons */}
-      <RideButtons barName={barDetails.name} address={barDetails.address} />
-
       {/* Description */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
@@ -274,7 +271,7 @@ export default function Cantina() {
       </View>
 
       {/* Deals & Promos */}
-      <View style={[styles.section, { marginBottom: 30 }]}>
+      <View style={[styles.section, { marginBottom: 0 }]}>
         <Text style={styles.sectionTitle}>Deals & Promos</Text>
         {barDetails.deals.map((deal, index) => (
           <View key={index} style={styles.dealCard}>
@@ -286,8 +283,12 @@ export default function Cantina() {
           </View>
         ))}
       </View>
+      {/* Ride Buttons */}
+  <RideButtons barName={barDetails.name} address={barDetails.address} />
     </ScrollView>
+    
   )
+  
 }
 
 const styles = StyleSheet.create({

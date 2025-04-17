@@ -6,6 +6,7 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useFavorites } from "../../src/contexts/FavoritesContext"
 import { COLORS } from "@/constants/theme"
+import RideButtons from "../../src/contexts/RideButtons"
 
 const { width } = Dimensions.get("window")
 
@@ -215,7 +216,7 @@ export default function JJsTavern() {
       </View>
 
       {/* Deals & Promos */}
-      <View style={[styles.section, { marginBottom: 30 }]}>
+      <View style={[styles.section, { marginBottom: 0 }]}>
         <Text style={styles.sectionTitle}>Deals & Promos</Text>
         {barDetails.deals.map((deal, index) => (
           <View key={index} style={styles.dealCard}>
@@ -227,8 +228,13 @@ export default function JJsTavern() {
           </View>
         ))}
       </View>
+      {/* Ride Buttons */}
+        <RideButtons barName={barDetails.name} address={barDetails.address} />
     </ScrollView>
+    
+    
   )
+  
 }
 
 const styles = StyleSheet.create({
