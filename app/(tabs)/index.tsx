@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Alert,
+  Share,
 } from "react-native"
 import { styles as authStyles } from "../../styles/auth.styles"
 import { useRouter } from "expo-router"
@@ -181,6 +182,32 @@ export default function Index() {
     setCommentModalVisible(false)
   }
 
+  // Share post
+  const sharePost = async (post: Post) => {
+    try {
+      const result = await Share.share({
+        message: `Check out this post from ${post.username}${post.barTag ? ` at ${post.barTag}` : ""}!`,
+        url: post.imageUri, // This may not work on all platforms, but will be included when available
+      })
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+          console.log(`Shared with ${result.activityType}`)
+        } else {
+          // shared
+          console.log("Shared successfully")
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+        console.log("Share dismissed")
+      }
+    } catch (error) {
+      Alert.alert("Error", "Something went wrong sharing this post")
+      console.error("Error sharing:", error)
+    }
+  }
+
   // Format timestamp
   const formatTimestamp = (timestamp: number) => {
     const now = new Date()
@@ -240,6 +267,11 @@ export default function Index() {
     if (minutes <= 10) return "Short Wait ⏱️"
     if (minutes <= 20) return `${minutes} minutes`
     return `${minutes} minutes ⚠️`
+  }
+
+  // Check if post belongs to current user
+  const isUserPost = (post: Post) => {
+    return user && post.username === (user.username || user.firstName || "Anonymous")
   }
 
   // Render comment modal
@@ -310,7 +342,7 @@ export default function Index() {
     const isLiked = user ? post.likes.includes(user.id) : false
 
     return (
-      <View style={feedStyles.postContainer}>
+      <TouchableOpacity style={feedStyles.postContainer} activeOpacity={1}>
         {/* Post Header */}
         <View style={feedStyles.postHeader}>
           <View style={feedStyles.postUser}>
@@ -338,7 +370,13 @@ export default function Index() {
 
         {/* Post Actions */}
         <View style={feedStyles.postActions}>
-          <TouchableOpacity style={feedStyles.actionButton} onPress={() => handleLikePost(post.id)}>
+          <TouchableOpacity
+            style={feedStyles.actionButton}
+            onPress={(e) => {
+              e.stopPropagation()
+              handleLikePost(post.id)
+            }}
+          >
             <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "red" : "white"} />
             <Text style={feedStyles.actionText}>
               {post.likes.length > 0 ? post.likes.length : ""}{" "}
@@ -348,7 +386,8 @@ export default function Index() {
 
           <TouchableOpacity
             style={feedStyles.actionButton}
-            onPress={() => {
+            onPress={(e) => {
+              e.stopPropagation()
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -362,9 +401,9 @@ export default function Index() {
 
           <TouchableOpacity
             style={feedStyles.actionButton}
-            onPress={() => {
-              // Share functionality
-              Alert.alert("Share", "Sharing functionality will be implemented here")
+            onPress={(e) => {
+              e.stopPropagation()
+              sharePost(post)
             }}
           >
             <Ionicons name="share-outline" size={22} color="white" />
@@ -383,7 +422,8 @@ export default function Index() {
         {post.comments.length > 0 && (
           <TouchableOpacity
             style={feedStyles.commentsPreview}
-            onPress={() => {
+            onPress={(e) => {
+              e.stopPropagation()
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -400,7 +440,7 @@ export default function Index() {
             )}
           </TouchableOpacity>
         )}
-      </View>
+      </TouchableOpacity>
     )
   }
 
@@ -821,4 +861,5 @@ const feedStyles = StyleSheet.create({
     fontSize: 14,
     marginTop: 5,
   },
+  
 })
