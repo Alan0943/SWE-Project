@@ -18,14 +18,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
+  Share,
 } from "react-native"
-import { useUser } from "@clerk/clerk-expo"
+import { useUser, useAuth } from "@clerk/clerk-expo"
 import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "@/constants/theme"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as ImagePicker from "expo-image-picker"
 
 const { width, height } = Dimensions.get("window")
+const isPhone = width < 600 // Simple check for screen width
 
 // Post type definition
 interface Post {
@@ -206,6 +208,7 @@ const BARS = [
 
 export default function Profile() {
   const { user } = useUser()
+  const { signOut } = useAuth()
   const [activeTab, setActiveTab] = useState("posts")
   const [friends, setFriends] = useState<Friend[]>(MOCK_FRIENDS)
   const [showEditUsername, setShowEditUsername] = useState(false)
@@ -226,11 +229,11 @@ export default function Profile() {
   const [favorites, setFavorites] = useState<string[]>([])
   const [showImageOptions, setShowImageOptions] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   // Refs for FlatLists to avoid the nesting error
   const postsListRef = useRef(null)
   const friendsListRef = useRef(null)
-  const favoritesListRef = useRef(null)
 
   // Load profile image from AsyncStorage
   useEffect(() => {
@@ -247,13 +250,6 @@ export default function Profile() {
 
     loadProfileImage()
   }, [])
-
-  // Load favorites from AsyncStorage whenever activeTab changes to "favorites"
-  useEffect(() => {
-    if (activeTab === "favorites") {
-      loadFavorites()
-    }
-  }, [activeTab])
 
   // Load favorites from AsyncStorage
   const loadFavorites = async () => {
@@ -536,7 +532,7 @@ export default function Profile() {
         // Filter out the post to delete
         const updatedPosts = allPosts.filter((post: Post) => post.id !== postId)
 
-        // Save updated posts
+        // Save updated posts to AsyncStorage
         await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
 
         // Update local state with user's posts
@@ -554,6 +550,32 @@ export default function Profile() {
     } catch (error) {
       console.error("Error deleting post:", error)
       Alert.alert("Error", "Failed to delete post")
+    }
+  }
+
+  // Share post
+  const sharePost = async (post: Post) => {
+    try {
+      const result = await Share.share({
+        message: `Check out this post from ${post.username}${post.barTag ? ` at ${post.barTag}` : ""}!`,
+        url: post.imageUri, // This may not work on all platforms, but will be included when available
+      })
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+          console.log(`Shared with ${result.activityType}`)
+        } else {
+          // shared
+          console.log("Shared successfully")
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+        console.log("Share dismissed")
+      }
+    } catch (error) {
+      Alert.alert("Error", "Something went wrong sharing this post")
+      console.error("Error sharing:", error)
     }
   }
 
@@ -635,6 +657,58 @@ export default function Profile() {
     }
   }
 
+  // Handle sign out
+  const handleSignOut = async () => {
+    try {
+      await signOut()
+      setShowSettings(false)
+      // The Clerk SDK will handle the redirect to the sign-in page
+    } catch (error) {
+      console.error("Error signing out:", error)
+      Alert.alert("Error", "Failed to sign out. Please try again.")
+    }
+  }
+
+  // Handle delete account
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // In a real app, you would call an API to delete the user's account
+              if (user) {
+                // Delete user data from AsyncStorage
+                await AsyncStorage.removeItem("profileImage")
+                await AsyncStorage.removeItem("addedFriends")
+
+                // Sign out the user
+                await signOut()
+                setShowSettings(false)
+
+                // The Clerk SDK will handle the redirect to the sign-in page
+              } else {
+                Alert.alert("Error", "User not found. Please try again.")
+              }
+            } catch (error) {
+              console.error("Error deleting account:", error)
+              Alert.alert("Error", "Failed to delete account. Please try again.")
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    )
+  }
+
   // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -648,9 +722,6 @@ export default function Profile() {
           const userPosts = parsedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
           setPosts(userPosts)
         }
-      } else if (activeTab === "favorites") {
-        // Reload favorites
-        await loadFavorites()
       } else if (activeTab === "friends") {
         // Reload friends
         const storedFriends = await AsyncStorage.getItem("addedFriends")
@@ -672,7 +743,7 @@ export default function Profile() {
       <View style={styles.postGridOverlay}>
         <View style={styles.postGridStats}>
           <View style={styles.postGridStat}>
-            <Ionicons name="heart" size={14} color="white" />
+            <Ionicons name="bookmark" size={14} color="white" />
             <Text style={styles.postGridStatText}>{item.likes.length}</Text>
           </View>
           <View style={styles.postGridStat}>
@@ -683,41 +754,6 @@ export default function Profile() {
       </View>
     </Pressable>
   )
-
-  // Render favorite bar item
-  const renderFavoriteBar = ({ item }: { item: string }) => {
-    const bar = BARS.find((b) => b.name === item)
-    if (!bar) return null
-
-    return (
-      <View style={styles.favoriteBarItem}>
-        <Image source={bar.image} style={styles.favoriteBarImage} />
-        <View style={styles.favoriteBarInfo}>
-          <Text style={styles.favoriteBarName}>{bar.name}</Text>
-          <View style={styles.favoriteBarDetails}>
-            <View style={styles.favoriteBarDetail}>
-              <Ionicons
-                name="time-outline"
-                size={14}
-                color={bar.waitTime <= 10 ? "limegreen" : bar.waitTime <= 20 ? "gold" : "red"}
-              />
-              <Text style={styles.favoriteBarDetailText}>
-                {bar.waitTime === 0 ? "Short Wait" : `${bar.waitTime} min`}
-              </Text>
-            </View>
-            <View style={styles.favoriteBarDetail}>
-              <Ionicons
-                name="cash-outline"
-                size={14}
-                color={bar.coverCharge <= 9 ? "limegreen" : bar.coverCharge <= 19 ? "gold" : "red"}
-              />
-              <Text style={styles.favoriteBarDetailText}>{bar.coverCharge === 0 ? "Free" : `$${bar.coverCharge}`}</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    )
-  }
 
   // Render user search result
   const renderUserSearchResult = ({ item }: { item: AppUser }) => (
@@ -733,6 +769,55 @@ export default function Profile() {
       <Ionicons name="add-circle" size={24} color={COLORS.primary} />
     </TouchableOpacity>
   )
+
+  // Render favorite bar item
+  const renderFavoriteBar = ({ item }: { item: string }) => {
+    const bar = BARS.find((b) => b.name === item)
+    if (!bar) return null
+
+    const getWaitColor = (minutes: number) => {
+      if (minutes <= 10) return "limegreen"
+      if (minutes <= 20) return "gold"
+      return "red"
+    }
+
+    const getCoverColor = (amount: number) => {
+      if (amount <= 9) return "limegreen"
+      if (amount <= 19) return "gold"
+      return "red"
+    }
+
+    const getCoverLabel = (amount: number) => {
+      if (amount === 0) return "Free Entry 🎉"
+      if (amount >= 20) return `$${amount} 🚨`
+      return `$${amount}`
+    }
+
+    const getWaitLabel = (minutes: number) => {
+      if (minutes <= 10) return "Short Wait ⏱️"
+      if (minutes <= 20) return `${minutes} minutes`
+      return `${minutes} minutes ⚠️`
+    }
+
+    return (
+      <View style={styles.favoriteBarItem}>
+        <Image source={bar.image} style={styles.favoriteBarImage} />
+        <View style={styles.favoriteBarInfo}>
+          <Text style={styles.favoriteBarName}>{bar.name}</Text>
+          <View style={styles.favoriteBarDetails}>
+            <View style={styles.favoriteBarDetail}>
+              <Ionicons name="time-outline" size={14} color={getWaitColor(bar.waitTime)} />
+              <Text style={styles.favoriteBarDetailText}>{getWaitLabel(bar.waitTime)}</Text>
+            </View>
+            <View style={styles.favoriteBarDetail}>
+              <Ionicons name="cash-outline" size={14} color={getCoverColor(bar.coverCharge)} />
+              <Text style={styles.favoriteBarDetailText}>{getCoverLabel(bar.coverCharge)}</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    )
+  }
 
   // Render content based on active tab
   const renderTabContent = () => {
@@ -751,6 +836,7 @@ export default function Profile() {
               </ScrollView>
             ) : (
               <FlatList
+                key={`posts-grid-${isPhone ? "phone" : "tablet"}`}
                 ref={postsListRef}
                 data={posts}
                 keyExtractor={(item) => item.id}
@@ -820,7 +906,6 @@ export default function Profile() {
               </ScrollView>
             ) : (
               <FlatList
-                ref={favoritesListRef}
                 data={favorites}
                 keyExtractor={(item) => item}
                 renderItem={renderFavoriteBar}
@@ -837,49 +922,59 @@ export default function Profile() {
     }
   }
 
+  // Load favorites from AsyncStorage whenever activeTab changes to "favorites"
+  useEffect(() => {
+    if (activeTab === "favorites") {
+      loadFavorites()
+    }
+  }, [activeTab])
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Profile Header */}
-      <View style={styles.profileHeader}>
-        <TouchableOpacity onPress={() => setShowImageOptions(true)}>
-          <View style={styles.profileImageContainer}>
-            <Image
-              source={
-                profileImage
-                  ? { uri: profileImage }
-                  : user?.imageUrl
-                    ? { uri: user.imageUrl }
-                    : require("../../assets/images/default-profile.png")
-              }
-              style={styles.profileImage}
-            />
-            <View style={styles.changePhotoButton}>
-              <Ionicons name="camera" size={16} color="white" />
+      {/* Profile Header with Settings Button */}
+      <View style={styles.headerContainer}>
+        <View style={styles.profileHeader}>
+          <TouchableOpacity onPress={() => setShowImageOptions(true)}>
+            <View style={styles.profileImageContainer}>
+              <Image
+                source={
+                  profileImage
+                    ? { uri: profileImage }
+                    : user?.imageUrl
+                      ? { uri: user.imageUrl }
+                      : require("../../assets/images/default-profile.png")
+                }
+                style={styles.profileImage}
+              />
+              <View style={styles.changePhotoButton}>
+                <Ionicons name="camera" size={16} color="white" />
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.usernameContainer}>
+            <Text style={styles.username}>{username || user?.username || "User"}</Text>
+            <Pressable style={styles.editUsernameButton} onPress={() => setShowEditUsername(true)}>
+              <Text style={styles.editUsernameText}>Change Username</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{posts.length}</Text>
+              <Text style={styles.statLabel}>Posts</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{friends.length}</Text>
+              <Text style={styles.statLabel}>Friends</Text>
             </View>
           </View>
+        </View>
+
+        {/* Settings Button */}
+        <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettings(true)}>
+          <Ionicons name="settings-outline" size={24} color="white" />
         </TouchableOpacity>
-
-        <View style={styles.usernameContainer}>
-          <Text style={styles.username}>{username || user?.username || "User"}</Text>
-          <Pressable style={styles.editUsernameButton} onPress={() => setShowEditUsername(true)}>
-            <Text style={styles.editUsernameText}>Change Username</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{posts.length}</Text>
-            <Text style={styles.statLabel}>Posts</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{friends.length}</Text>
-            <Text style={styles.statLabel}>Friends</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{favorites.length}</Text>
-            <Text style={styles.statLabel}>Favorites</Text>
-          </View>
-        </View>
       </View>
 
       {/* Tabs */}
@@ -900,7 +995,7 @@ export default function Profile() {
           style={[styles.tab, activeTab === "favorites" && styles.activeTab]}
           onPress={() => setActiveTab("favorites")}
         >
-          <Ionicons name="heart-outline" size={24} color={activeTab === "favorites" ? COLORS.primary : "white"} />
+          <Ionicons name="bookmark-outline" size={24} color={activeTab === "favorites" ? COLORS.primary : "white"} />
         </Pressable>
       </View>
 
@@ -1008,14 +1103,26 @@ export default function Profile() {
                   <TouchableOpacity
                     style={styles.deletePostButton}
                     onPress={() => {
-                      Alert.alert("Delete Post", "Are you sure you want to delete this post?", [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Delete",
-                          style: "destructive",
-                          onPress: () => selectedPost && deletePost(selectedPost.id),
-                        },
-                      ])
+                      Alert.alert(
+                        "Delete Post",
+                        "Are you sure you want to delete this post?",
+                        [
+                          {
+                            text: "Cancel",
+                            style: "cancel",
+                          },
+                          {
+                            text: "Delete Post",
+                            style: "destructive",
+                            onPress: () => {
+                              if (selectedPost) {
+                                deletePost(selectedPost.id)
+                              }
+                            },
+                          },
+                        ],
+                        { cancelable: true },
+                      )
                     }}
                   >
                     <Ionicons name="trash-outline" size={22} color="#FF3B30" />
@@ -1054,9 +1161,9 @@ export default function Profile() {
                   <View style={styles.postActions}>
                     <TouchableOpacity style={styles.postAction} onPress={() => handleLikePost(selectedPost.id)}>
                       <Ionicons
-                        name={selectedPost.likes.includes(user?.id || "anonymous") ? "heart" : "heart-outline"}
+                        name={selectedPost.likes.includes(user?.id || "anonymous") ? "bookmark" : "bookmark-outline"}
                         size={24}
-                        color={selectedPost.likes.includes(user?.id || "anonymous") ? "#FF3B30" : "white"}
+                        color={selectedPost.likes.includes(user?.id || "anonymous") ? COLORS.primary : "white"}
                       />
                       <Text style={styles.postActionText}>{selectedPost.likes.length}</Text>
                     </TouchableOpacity>
@@ -1064,8 +1171,9 @@ export default function Profile() {
                       <Ionicons name="chatbubble-outline" size={22} color="white" />
                       <Text style={styles.postActionText}>{selectedPost.comments.length}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
+                    <TouchableOpacity style={styles.postAction} onPress={() => selectedPost && sharePost(selectedPost)}>
                       <Ionicons name="share-social-outline" size={24} color="white" />
+                      <Text style={styles.postActionText}>Share</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1197,6 +1305,37 @@ export default function Profile() {
           </View>
         </View>
       </Modal>
+
+      {/* Settings Modal */}
+      <Modal
+        visible={showSettings}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.settingsModalContent}>
+            <View style={styles.settingsHeader}>
+              <Text style={styles.settingsTitle}>Settings</Text>
+              <TouchableOpacity onPress={() => setShowSettings(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.settingsOptions}>
+              <TouchableOpacity style={styles.settingsOption} onPress={handleSignOut}>
+                <Ionicons name="log-out-outline" size={24} color="white" style={styles.settingsIcon} />
+                <Text style={styles.settingsOptionText}>Sign Out</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.settingsOption} onPress={handleDeleteAccount}>
+                <Ionicons name="trash-outline" size={24} color="#FF3B30" style={styles.settingsIcon} />
+                <Text style={[styles.settingsOptionText, styles.deleteAccountText]}>Delete Account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -1206,10 +1345,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "black",
   },
-  profileHeader: {
-    alignItems: "center",
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: 16,
     paddingTop: 20,
+  },
+  profileHeader: {
+    flex: 1,
+    alignItems: "center",
     paddingBottom: 20,
+  },
+  settingsButton: {
+    padding: 10,
+    marginTop: 10,
   },
   profileImageContainer: {
     position: "relative",
@@ -1372,48 +1521,6 @@ const styles = StyleSheet.create({
   friendUsername: {
     color: "#999",
     fontSize: 14,
-  },
-  favoritesContainer: {
-    flex: 1,
-    minHeight: 200,
-  },
-  favoritesList: {
-    padding: 15,
-  },
-  favoriteBarItem: {
-    flexDirection: "row",
-    backgroundColor: "#222",
-    borderRadius: 10,
-    marginBottom: 15,
-    overflow: "hidden",
-  },
-  favoriteBarImage: {
-    width: 80,
-    height: 80,
-  },
-  favoriteBarInfo: {
-    flex: 1,
-    padding: 12,
-    justifyContent: "center",
-  },
-  favoriteBarName: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  favoriteBarDetails: {
-    flexDirection: "row",
-  },
-  favoriteBarDetail: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 15,
-  },
-  favoriteBarDetailText: {
-    color: "#ccc",
-    fontSize: 12,
-    marginLeft: 4,
   },
   emptyStateContainer: {
     flex: 1,
@@ -1775,5 +1882,88 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: "center",
     marginTop: 10,
+  },
+  // Settings modal styles
+  settingsModalContent: {
+    backgroundColor: "#222",
+    borderRadius: 10,
+    width: width * 0.8,
+    overflow: "hidden",
+  },
+  settingsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  settingsTitle: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  settingsOptions: {
+    padding: 10,
+  },
+  settingsOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  settingsIcon: {
+    marginRight: 15,
+  },
+  settingsOptionText: {
+    color: "white",
+    fontSize: 16,
+  },
+  deleteAccountText: {
+    color: "#FF3B30",
+  },
+  favoritesContainer: {
+    flex: 1,
+    minHeight: 200,
+  },
+  favoritesList: {
+    padding: 15,
+  },
+  favoriteBarItem: {
+    flexDirection: "row",
+    backgroundColor: "#222",
+    borderRadius: 10,
+    marginBottom: 15,
+    overflow: "hidden",
+  },
+  favoriteBarImage: {
+    width: 80,
+    height: 80,
+  },
+  favoriteBarInfo: {
+    flex: 1,
+    padding: 12,
+    justifyContent: "center",
+  },
+  favoriteBarName: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  favoriteBarDetails: {
+    flexDirection: "row",
+  },
+  favoriteBarDetail: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 15,
+  },
+  favoriteBarDetailText: {
+    color: "#ccc",
+    fontSize: 12,
+    marginLeft: 4,
   },
 })
