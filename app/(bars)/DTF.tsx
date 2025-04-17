@@ -29,9 +29,9 @@ export default function DTF() {
   // Gallery images
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const galleryImages = [
-    require("../../assets/images/dtf.jpg"),
-    require("../../assets/images/dtf.jpg"), // Replace with additional images
-    require("../../assets/images/dtf.jpg"), // Replace with additional images
+    require("../../assets/images/dtf1.jpg"),
+    require("../../assets/images/dtf2.jpg"), 
+    require("../../assets/images/dtf3.jpg"), 
   ]
 
   // Preload images

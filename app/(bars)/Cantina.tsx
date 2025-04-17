@@ -29,9 +29,9 @@ export default function Cantina() {
   // Gallery images
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const galleryImages = [
-    require("../../assets/images/Cantina.jpg"),
-    require("../../assets/images/Cantina.jpg"), // Replace with additional images
-    require("../../assets/images/Cantina.jpg"), // Replace with additional images
+    require("../../assets/images/cantina1.jpg"),
+    require("../../assets/images/cantina2.jpg"), 
+    require("../../assets/images/cantina3.jpg"), 
   ]
 
   // Preload images

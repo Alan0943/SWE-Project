@@ -29,9 +29,9 @@ export default function Range() {
   // Gallery images
   const [activeImageIndex, setActiveImageIndex] = useState(0)
   const galleryImages = [
-    require("../../assets/images/range.jpg"),
-    require("../../assets/images/range.jpg"), // Replace with additional images
-    require("../../assets/images/range.jpg"), // Replace with additional images
+    require("../../assets/images/range1.jpg"),
+    require("../../assets/images/range2.jpg"), // Replace with additional images
+    require("../../assets/images/range3.jpg"), // Replace with additional images
   ]
 
   // Preload images
