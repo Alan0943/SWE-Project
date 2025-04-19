@@ -19,116 +19,95 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "@/constants/theme"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../convex/_generated/api"
+import type { Id } from "../convex/_generated/dataModel"
 
-// Define the report type
+// Define a consistent bar type for the component
+type BarItem = {
+  id?: string
+  name: string
+  waitTime?: number
+  coverCharge?: number
+}
+
+// Define the report type for local storage
 type Report = {
-  id: string
   barName: string
   waitTime: number
   coverCharge: number
-  timestamp: string
-}
-
-// Define the type for the report data without id and timestamp
-type ReportData = Omit<Report, "id" | "timestamp">
-
-// In a real app, this would be connected to a backend
-// For this demo, we'll use a simple in-memory store
-const reportStore = {
-  reports: [] as Report[],
-  addReport: (report: ReportData) => {
-    reportStore.reports.push({
-      ...report,
-      timestamp: new Date().toISOString(),
-      id: Math.random().toString(36).substring(2, 9),
-    })
-    console.log("Report added:", report)
-    console.log("Total reports:", reportStore.reports.length)
-  },
-}
-
-// Helper function to ensure we have a string
-const ensureString = (value: string | string[] | null | undefined): string => {
-  if (Array.isArray(value)) {
-    return value[0] || ""
-  }
-  return value || ""
+  timestamp: number
 }
 
 export default function Report() {
   const router = useRouter()
   const params = useLocalSearchParams()
-  const [selectedBar, setSelectedBar] = useState(ensureString(params.barName))
+  const [selectedBar, setSelectedBar] = useState<string | null>(null)
+  const [selectedBarId, setSelectedBarId] = useState<Id<"bars"> | null>(null)
   const [waitTime, setWaitTime] = useState("")
   const [coverCharge, setCoverCharge] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [showBarPicker, setShowBarPicker] = useState(false)
 
-  // Bar data - same as in index.tsx
-  const bars = [
-    {
-      name: "MacDinton's Irish Pub",
-      waitTime: 21,
-      coverCharge: 10,
-      image: require("../assets/images/macdintons.jpg"),
-      route: "/(tabs)/MacDintons",
-    },
-    {
-      name: "JJ's Tavern",
-      waitTime: 11,
-      coverCharge: 10,
-      image: require("../assets/images/jjs.jpg"),
-      route: "/(tabs)/JJsTavern",
-    },
-    {
-      name: "Vivid Music Hall",
-      waitTime: 0,
-      coverCharge: 0,
-      image: require("../assets/images/vivid.jpg"),
-      route: "/(tabs)/VividMusicHall",
-    },
-    {
-      name: "DTF",
-      waitTime: 15,
-      coverCharge: 20,
-      image: require("../assets/images/dtf.jpg"),
-      route: "/(tabs)/DTF",
-    },
-    {
-      name: "Cantina",
-      waitTime: 35,
-      coverCharge: 20,
-      image: require("../assets/images/Cantina.jpg"),
-      route: "/Cantina",
-    },
-    {
-      name: "Lil Rudy's",
-      waitTime: 0,
-      coverCharge: 5,
-      image: require("../assets/images/LilRudys.jpg"),
-      route: "/(tabs)/LilRudys",
-    },
-    {
-      name: "Range",
-      waitTime: 20,
-      coverCharge: 10,
-      image: require("../assets/images/range.jpg"),
-      route: "/Range",
-    },
+  // Fetch bars from Convex
+  const dbBars = useQuery(api.bars.getAllBars) || []
+  const submitReport = useMutation(api.bars.submitBarReport)
+
+  // Original hardcoded bar data as fallback
+  const hardcodedBars: BarItem[] = [
+    { name: "MacDinton's Irish Pub", waitTime: 21, coverCharge: 10 },
+    { name: "JJ's Tavern", waitTime: 11, coverCharge: 10 },
+    { name: "Vivid Music Hall", waitTime: 0, coverCharge: 0 },
+    { name: "DTF", waitTime: 15, coverCharge: 20 },
+    { name: "Cantina", waitTime: 35, coverCharge: 20 },
+    { name: "Lil Rudy's", waitTime: 0, coverCharge: 5 },
+    { name: "Range", waitTime: 20, coverCharge: 10 },
   ]
+
+  // Create a unified list of bars with consistent types
+  const bars: BarItem[] =
+    dbBars && dbBars.length > 0
+      ? dbBars.map((bar) => ({
+          id: bar.id,
+          name: bar.name,
+          waitTime: bar.waitTime,
+          coverCharge: bar.coverCharge,
+        }))
+      : hardcodedBars
 
   // If a bar was passed in the params, set it as the selected bar
   useEffect(() => {
-    console.log("Params barName:", params.barName)
     if (params.barName) {
-      const barName = ensureString(params.barName)
-      console.log("Setting selected bar to:", barName)
+      const barName = params.barName as string
       setSelectedBar(barName)
-    }
-  }, [params.barName])
 
-  const handleSubmit = () => {
+      if (params.barId) {
+        try {
+          // Convert the string ID to a Convex ID if available
+          const barId = params.barId as string
+          setSelectedBarId(barId as Id<"bars">)
+        } catch (error) {
+          console.error("Invalid bar ID format:", error)
+        }
+      }
+    }
+  }, [params.barId, params.barName])
+
+  // Function to store report locally if database is not available
+  const storeReportLocally = (report: Report) => {
+    try {
+      // In a real app, you'd use AsyncStorage here
+      // For now, just log the report
+      console.log("Report stored locally:", report)
+      return true
+    } catch (error) {
+      console.error("Error storing report locally:", error)
+      return false
+    }
+  }
+
+  const handleSubmit = async () => {
     // Validate inputs
     if (!selectedBar) {
       Alert.alert("Error", "Please select a bar")
@@ -150,15 +129,28 @@ export default function Report() {
     // Submit the report
     setIsSubmitting(true)
 
-    // Simulate API call
-    setTimeout(() => {
-      try {
-        reportStore.addReport({
-          barName: selectedBar,
+    try {
+      let success = false
+
+      // If we have a bar ID, try to submit to the database
+      if (selectedBarId) {
+        await submitReport({
+          barId: selectedBarId,
           waitTime: waitTimeNum,
           coverCharge: coverChargeNum,
         })
+        success = true
+      } else {
+        // If no bar ID, store locally
+        success = storeReportLocally({
+          barName: selectedBar,
+          waitTime: waitTimeNum,
+          coverCharge: coverChargeNum,
+          timestamp: Date.now(),
+        })
+      }
 
+      if (success) {
         setIsSuccess(true)
 
         // Reset form after 1.5 seconds
@@ -167,16 +159,18 @@ export default function Report() {
           setWaitTime("")
           setCoverCharge("")
 
-          // In a real app, this would update the global state
-          // For now, we'll just navigate back
+          // Navigate back
           router.push("/(tabs)/bars")
         }, 1500)
-      } catch (error) {
+      } else {
         Alert.alert("Error", "Failed to submit report. Please try again.")
-      } finally {
-        setIsSubmitting(false)
       }
-    }, 1000)
+    } catch (error) {
+      Alert.alert("Error", "Failed to submit report. Please try again.")
+      console.error("Error submitting report:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (isSuccess) {
@@ -283,19 +277,41 @@ export default function Report() {
 
             <FlatList
               data={bars}
-              keyExtractor={(item) => item.name}
+              keyExtractor={(item, index) => item.id || `bar-${index}`}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.barItem, selectedBar === item.name && styles.selectedBarItem]}
+                  style={[
+                    styles.barItem,
+                    (selectedBarId && item.id && selectedBarId === item.id) ||
+                    (!selectedBarId && selectedBar === item.name)
+                      ? styles.selectedBarItem
+                      : {},
+                  ]}
                   onPress={() => {
                     setSelectedBar(item.name)
+                    if (item.id) {
+                      setSelectedBarId(item.id as Id<"bars">)
+                    } else {
+                      setSelectedBarId(null)
+                    }
                     setShowBarPicker(false)
                   }}
                 >
-                  <Text style={[styles.barItemText, selectedBar === item.name && styles.selectedBarItemText]}>
+                  <Text
+                    style={[
+                      styles.barItemText,
+                      (selectedBarId && item.id && selectedBarId === item.id) ||
+                      (!selectedBarId && selectedBar === item.name)
+                        ? styles.selectedBarItemText
+                        : {},
+                    ]}
+                  >
                     {item.name}
                   </Text>
-                  {selectedBar === item.name && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                  {((selectedBarId && item.id && selectedBarId === item.id) ||
+                    (!selectedBarId && selectedBar === item.name)) && (
+                    <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                  )}
                 </TouchableOpacity>
               )}
             />

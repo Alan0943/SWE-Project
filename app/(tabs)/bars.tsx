@@ -6,6 +6,18 @@ import { useRouter } from "expo-router"
 import { useFavorites } from "../../src/contexts/FavoritesContext"
 import { useEffect, useRef, useState } from "react"
 import { Ionicons } from "@expo/vector-icons"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../convex/_generated/api"
+
+// Define a consistent bar type
+type Bar = {
+  id?: string
+  name: string
+  waitTime: number
+  coverCharge: number
+  image: any
+  route: string
+}
 
 export default function Index() {
   const router = useRouter()
@@ -17,31 +29,12 @@ export default function Index() {
   const [isPhone, setIsPhone] = useState(true)
   const [screenWidth, setScreenWidth] = useState(Dimensions.get("window").width)
 
-  useEffect(() => {
-    const checkDeviceType = () => {
-      const { width } = Dimensions.get("window")
-      setIsPhone(width < 768)
-      setScreenWidth(width)
-    }
+  // Try to fetch bars from Convex, but use hardcoded data as fallback
+  const dbBars = useQuery(api.bars.getAllBars)
+  const initializeBars = useMutation(api.bars.initializeBars)
 
-    // Initial check
-    checkDeviceType()
-
-    // Listen for dimension changes
-    const dimensionsSubscription = Dimensions.addEventListener("change", checkDeviceType)
-
-    // Cleanup
-    return () => {
-      dimensionsSubscription.remove()
-    }
-  }, [])
-
-  // Animation values for each bar card
-  const slideAnimations = useRef<{ [key: string]: Animated.Value }>({})
-  const [expandedCard, setExpandedCard] = useState<string | null>(null)
-
-  // ✅ Bar data
-  const bars = [
+  // Original hardcoded bar data as fallback
+  const hardcodedBars: Bar[] = [
     {
       name: "MacDinton's Irish Pub",
       waitTime: 21,
@@ -54,7 +47,7 @@ export default function Index() {
       waitTime: 11,
       coverCharge: 10,
       image: require("../../assets/images/jjs.jpg"),
-      route: "/(bars)/JJsTavern",
+      route: "/(tabs)/JJsTavern",
     },
     {
       name: "Vivid Music Hall",
@@ -93,6 +86,56 @@ export default function Index() {
     },
   ]
 
+  // Combine database bars with hardcoded bars
+  const bars: Bar[] =
+    dbBars && dbBars.length > 0
+      ? dbBars.map((dbBar) => {
+          // Find matching hardcoded bar for image and route
+          const hardcodedBar = hardcodedBars.find((hb) => hb.name === dbBar.name) || hardcodedBars[0]
+          return {
+            id: dbBar.id,
+            name: dbBar.name,
+            waitTime: dbBar.waitTime,
+            coverCharge: dbBar.coverCharge,
+            image: hardcodedBar.image,
+            route: hardcodedBar.route,
+          }
+        })
+      : hardcodedBars
+
+  // Try to initialize bars if they don't exist yet
+  useEffect(() => {
+    if (dbBars !== undefined && dbBars.length === 0) {
+      // No bars in database, try to initialize them
+      initializeBars({}).catch((err) => {
+        console.error("Failed to initialize bars:", err)
+      })
+    }
+  }, [dbBars, initializeBars])
+
+  useEffect(() => {
+    const checkDeviceType = () => {
+      const { width } = Dimensions.get("window")
+      setIsPhone(width < 768)
+      setScreenWidth(width)
+    }
+
+    // Initial check
+    checkDeviceType()
+
+    // Listen for dimension changes
+    const dimensionsSubscription = Dimensions.addEventListener("change", checkDeviceType)
+
+    // Cleanup
+    return () => {
+      dimensionsSubscription.remove()
+    }
+  }, [])
+
+  // Animation values for each bar card
+  const slideAnimations = useRef<{ [key: string]: Animated.Value }>({})
+  const [expandedCard, setExpandedCard] = useState<string | null>(null)
+
   // Initialize animation values for each bar
   useEffect(() => {
     const animations: { [key: string]: Animated.Value } = {}
@@ -100,7 +143,7 @@ export default function Index() {
       animations[bar.name] = new Animated.Value(0) // 0 = not expanded, 1 = expanded
     })
     slideAnimations.current = animations
-  }, [])
+  }, [bars])
 
   // Enhanced image preloading
   useEffect(() => {
@@ -288,7 +331,7 @@ export default function Index() {
                     bottom: -4,
                     borderRadius: 16,
                     backgroundColor: "limegreen",
-                    opacity: .7,
+                    opacity: 0.7,
                     shadowColor: "limegreen",
                     shadowOffset: { width: 0, height: 0 },
                     shadowOpacity: 1,
@@ -297,8 +340,6 @@ export default function Index() {
                     zIndex: -1,
                   }}
                 />
-
-          
 
                 <View
                   style={{
@@ -542,7 +583,15 @@ export default function Index() {
                   >
                     <Pressable
                       onPress={() => {
-                        router.push("/report" as any)
+                        // Pass both bar ID and name to the report page
+                        const params: any = { barName: bar.name }
+                        if (bar.id) {
+                          params.barId = bar.id
+                        }
+                        router.push({
+                          pathname: "/report",
+                          params,
+                        } as any)
                       }}
                       style={({ pressed }) => ({
                         opacity: pressed ? 0.5 : 1,

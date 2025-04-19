@@ -60,4 +60,27 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_post", ["postId"])
     .index("by_user_and_post", ["userId", "postId"]),
+
+  // New table for bars
+  bars: defineTable({
+    name: v.string(),
+    imageUrl: v.string(),
+    route: v.string(),
+    averageWaitTime: v.number(),
+    averageCoverCharge: v.number(),
+    reportCount: v.number(),
+    lastUpdated: v.number(), // timestamp
+  }).index("by_name", ["name"]),
+
+  // New table for bar reports
+  barReports: defineTable({
+    barId: v.id("bars"),
+    userId: v.id("users"),
+    waitTime: v.number(),
+    coverCharge: v.number(),
+    timestamp: v.number(), // timestamp
+  })
+    .index("by_bar", ["barId"])
+    .index("by_user", ["userId"])
+    .index("by_bar_and_user", ["barId", "userId"]),
 })
