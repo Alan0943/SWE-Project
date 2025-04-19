@@ -16,6 +16,7 @@ import {
   SafeAreaView,
   Alert,
   Share,
+  Dimensions,
 } from "react-native"
 import { styles as authStyles } from "../../styles/auth.styles"
 import { useRouter } from "expo-router"
@@ -27,6 +28,8 @@ import { COLORS } from "@/constants/theme"
 import { api } from "@/convex/_generated/api"
 import { useQuery, useMutation } from "convex/react"
 import type { Id } from "@/convex/_generated/dataModel"
+
+const { width, height } = Dimensions.get("window")
 
 // Post type definition
 interface Post {
@@ -49,17 +52,51 @@ interface Comment {
   timestamp: number
 }
 
+type SortOption = "recent" | "popular" | "mostLiked"
+
 export default function Index() {
   const router = useRouter()
   const { favorites, toggleFavorite } = useFavorites()
-  const { user } = useUser()
+  const { user, isLoaded: isUserLoaded } = useUser()
   const [commentText, setCommentText] = useState("")
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [commentModalVisible, setCommentModalVisible] = useState(false)
+  const [fullImageModalVisible, setFullImageModalVisible] = useState(false)
+  const [sortOption, setSortOption] = useState<SortOption>("recent")
 
   // Fetch posts from Convex
-  const posts = useQuery(api.posts.getAllPosts) || []
-  const loading = posts === undefined
+  const convexPosts = useQuery(api.posts.getAllPosts) || []
+  const loading = convexPosts === undefined
+
+  // Sorted posts
+  const [sortedPosts, setSortedPosts] = useState<Post[]>([])
+
+  // Sort posts based on selected option
+  useEffect(() => {
+    if (!convexPosts || convexPosts.length === 0) {
+      setSortedPosts([])
+      return
+    }
+
+    let sorted = [...convexPosts]
+
+    switch (sortOption) {
+      case "recent":
+        // Sort by timestamp (newest first)
+        sorted = sorted.sort((a, b) => b.timestamp - a.timestamp)
+        break
+      case "popular":
+        // Sort by comment count (most comments first)
+        sorted = sorted.sort((a, b) => b.comments.length - a.comments.length)
+        break
+      case "mostLiked":
+        // Sort by like count (most likes first)
+        sorted = sorted.sort((a, b) => b.likes.length - a.likes.length)
+        break
+    }
+
+    setSortedPosts(sorted)
+  }, [convexPosts, sortOption])
 
   // Convex mutations
   const toggleLikeMutation = useMutation(api.posts.toggleLike)
@@ -120,7 +157,7 @@ export default function Index() {
 
   // Handle like post
   const handleLikePost = async (postId: Id<"posts">) => {
-    if (!user) return
+    if (!isUserLoaded || !user) return
 
     try {
       await toggleLikeMutation({ postId })
@@ -132,7 +169,7 @@ export default function Index() {
 
   // Handle add comment
   const handleAddComment = async () => {
-    if (!user || !selectedPost || !commentText.trim()) return
+    if (!isUserLoaded || !user || !selectedPost || !commentText.trim()) return
 
     try {
       await addCommentMutation({
@@ -155,19 +192,6 @@ export default function Index() {
         message: `Check out this post from ${post.username}${post.barTag ? ` at ${post.barTag}` : ""}!`,
         url: post.imageUri, // This may not work on all platforms, but will be included when available
       })
-
-      if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          // shared with activity type of result.activityType
-          console.log(`Shared with ${result.activityType}`)
-        } else {
-          // shared
-          console.log("Shared successfully")
-        }
-      } else if (result.action === Share.dismissedAction) {
-        // dismissed
-        console.log("Share dismissed")
-      }
     } catch (error) {
       Alert.alert("Error", "Something went wrong sharing this post")
       console.error("Error sharing:", error)
@@ -227,7 +251,7 @@ export default function Index() {
 
   // Check if post belongs to current user
   const isUserPost = (post: Post) => {
-    return user && post.username === (user.username || user.firstName || "Anonymous")
+    return isUserLoaded && user && post.username === (user.username || user.firstName || "Anonymous")
   }
 
   // Render comment modal
@@ -293,12 +317,45 @@ export default function Index() {
     )
   }
 
-  // Render post item
-  const renderPostItem = (post: Post) => {
-    const isLiked = user ? post.likes.includes(user.id) : false
+  // Render full image modal
+  const renderFullImageModal = () => {
+    if (!selectedPost) return null
 
     return (
-      <TouchableOpacity style={feedStyles.postContainer} activeOpacity={1}>
+      <Modal
+        visible={fullImageModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFullImageModalVisible(false)}
+      >
+        <View style={feedStyles.fullImageModalContainer}>
+          <TouchableOpacity style={feedStyles.fullImageCloseButton} onPress={() => setFullImageModalVisible(false)}>
+            <Ionicons name="close-circle" size={36} color="white" />
+          </TouchableOpacity>
+
+          <Image source={{ uri: selectedPost.imageUri }} style={feedStyles.fullImage} resizeMode="contain" />
+
+          <View style={feedStyles.fullImageCaption}>
+            <Text style={feedStyles.fullImageUsername}>{selectedPost.username}</Text>
+            {selectedPost.caption ? <Text style={feedStyles.fullImageCaptionText}>{selectedPost.caption}</Text> : null}
+            {selectedPost.barTag ? (
+              <View style={feedStyles.fullImageBarTag}>
+                <Ionicons name="location" size={14} color={COLORS.primary} />
+                <Text style={feedStyles.fullImageBarTagText}>{selectedPost.barTag}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+    )
+  }
+
+  // Render post item
+  const renderPostItem = ({ item: post }: { item: Post }) => {
+    const isLiked = isUserLoaded && user ? post.likes.includes(user.id) : false
+
+    return (
+      <View style={feedStyles.postContainer}>
         {/* Post Header */}
         <View style={feedStyles.postHeader}>
           <View style={feedStyles.postUser}>
@@ -322,28 +379,29 @@ export default function Index() {
         </View>
 
         {/* Post Image */}
-        <Image source={{ uri: post.imageUri }} style={feedStyles.postImage} />
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => {
+            setSelectedPost(post)
+            setFullImageModalVisible(true)
+          }}
+        >
+          <Image source={{ uri: post.imageUri }} style={feedStyles.postImage} />
+        </TouchableOpacity>
 
         {/* Post Actions */}
         <View style={feedStyles.postActions}>
-          <TouchableOpacity
-            style={feedStyles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation()
-              handleLikePost(post.id as Id<"posts">)
-            }}
-          >
+          <TouchableOpacity style={feedStyles.actionButton} onPress={() => handleLikePost(post.id as Id<"posts">)}>
             <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "red" : "white"} />
             <Text style={feedStyles.actionText}>
               {post.likes.length > 0 ? post.likes.length : ""}{" "}
-              {post.likes.length === 1 ? "Like" : post.likes.length > 1 ? "Likes" : "Like"}
+              <Text>{post.likes.length === 1 ? "Like" : post.likes.length > 1 ? "Likes" : "Like"}</Text>
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={feedStyles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation()
+            onPress={() => {
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -351,17 +409,11 @@ export default function Index() {
             <Ionicons name="chatbubble-outline" size={22} color="white" />
             <Text style={feedStyles.actionText}>
               {post.comments.length > 0 ? post.comments.length : ""}{" "}
-              {post.comments.length === 1 ? "Comment" : post.comments.length > 1 ? "Comments" : "Comment"}
+              <Text>{post.comments.length === 1 ? "Comment" : post.comments.length > 1 ? "Comments" : "Comment"}</Text>
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={feedStyles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation()
-              sharePost(post)
-            }}
-          >
+          <TouchableOpacity style={feedStyles.actionButton} onPress={() => sharePost(post)}>
             <Ionicons name="share-outline" size={22} color="white" />
             <Text style={feedStyles.actionText}>Share</Text>
           </TouchableOpacity>
@@ -370,7 +422,7 @@ export default function Index() {
         {/* Post Caption */}
         <View style={feedStyles.captionContainer}>
           <Text style={feedStyles.caption}>
-            <Text style={feedStyles.captionUsername}>{post.username}</Text> {post.caption}
+            <Text style={feedStyles.captionUsername}>{post.username}</Text> <Text>{post.caption}</Text>
           </Text>
         </View>
 
@@ -378,8 +430,7 @@ export default function Index() {
         {post.comments.length > 0 && (
           <TouchableOpacity
             style={feedStyles.commentsPreview}
-            onPress={(e) => {
-              e.stopPropagation()
+            onPress={() => {
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -396,7 +447,7 @@ export default function Index() {
             )}
           </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
     )
   }
 
@@ -518,6 +569,35 @@ export default function Index() {
         />
       </View>
 
+      {/* Filter Options */}
+      <View style={feedStyles.filterContainer}>
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "recent" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("recent")}
+        >
+          <Ionicons name="time-outline" size={18} color={sortOption === "recent" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "recent" && feedStyles.activeFilterText]}>Recent</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "popular" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("popular")}
+        >
+          <Ionicons name="chatbubble-outline" size={18} color={sortOption === "popular" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "popular" && feedStyles.activeFilterText]}>Hottest</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "mostLiked" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("mostLiked")}
+        >
+          <Ionicons name="heart-outline" size={18} color={sortOption === "mostLiked" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "mostLiked" && feedStyles.activeFilterText]}>
+            Most Liked
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Posts Feed */}
       <View style={feedStyles.postsContainer}>
         {loading ? (
@@ -525,7 +605,7 @@ export default function Index() {
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={feedStyles.loadingText}>Loading posts...</Text>
           </View>
-        ) : posts.length === 0 ? (
+        ) : sortedPosts.length === 0 ? (
           <View style={feedStyles.emptyContainer}>
             <Ionicons name="images-outline" size={60} color="#555" />
             <Text style={feedStyles.emptyText}>No posts yet</Text>
@@ -537,9 +617,9 @@ export default function Index() {
           </View>
         ) : (
           <FlatList
-            data={posts}
+            data={sortedPosts}
             keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => renderPostItem(item)}
+            renderItem={renderPostItem}
             contentContainerStyle={{ paddingBottom: 20 }}
             showsVerticalScrollIndicator={false}
           />
@@ -548,11 +628,43 @@ export default function Index() {
 
       {/* Comment Modal */}
       {renderCommentModal()}
+
+      {/* Full Image Modal */}
+      {renderFullImageModal()}
     </View>
   )
 }
 
 const feedStyles = StyleSheet.create({
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: "#222",
+    marginHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  filterOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  activeFilterOption: {
+    backgroundColor: "rgba(74, 222, 128, 0.1)",
+  },
+  filterText: {
+    color: "white",
+    marginLeft: 6,
+    fontSize: 14,
+  },
+  activeFilterText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
   tabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -814,5 +926,50 @@ const feedStyles = StyleSheet.create({
     color: "#999",
     fontSize: 14,
     marginTop: 5,
+  },
+  // Full image modal styles
+  fullImageModalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullImage: {
+    width: width,
+    height: height * 0.7,
+  },
+  fullImageCloseButton: {
+    position: "absolute",
+    top: 40,
+    right: 20,
+    zIndex: 10,
+  },
+  fullImageCaption: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    padding: 16,
+  },
+  fullImageUsername: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  fullImageCaptionText: {
+    color: "white",
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  fullImageBarTag: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  fullImageBarTagText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    marginLeft: 4,
   },
 })
