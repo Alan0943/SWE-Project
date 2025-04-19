@@ -25,6 +25,9 @@ import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "@/constants/theme"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import * as ImagePicker from "expo-image-picker"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../convex/_generated/api"
+import { useRouter } from "expo-router"
 
 const { width, height } = Dimensions.get("window")
 const isPhone = width < 600 // Simple check for screen width
@@ -209,11 +212,15 @@ const BARS = [
 export default function Profile() {
   const { user } = useUser()
   const { signOut } = useAuth()
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState("posts")
   const [friends, setFriends] = useState<Friend[]>(MOCK_FRIENDS)
   const [showEditUsername, setShowEditUsername] = useState(false)
+  const [showEditFullname, setShowEditFullname] = useState(false)
   const [newUsername, setNewUsername] = useState("")
+  const [newFullname, setNewFullname] = useState("")
   const [username, setUsername] = useState(user?.username || "")
+  const [fullname, setFullname] = useState(user?.fullName || "")
   const [addedFriends, setAddedFriends] = useState<string[]>([])
   const [showFriendProfile, setShowFriendProfile] = useState(false)
   const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null)
@@ -230,10 +237,38 @@ export default function Profile() {
   const [showImageOptions, setShowImageOptions] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isUpdatingUsername, setIsUpdatingUsername] = useState(false)
+  const [isUpdatingFullname, setIsUpdatingFullname] = useState(false)
+  const [isUpdatingImage, setIsUpdatingImage] = useState(false)
+
+  // Convex mutations
+  const updateUsername = useMutation(api.users.updateUsername)
+  const updateFullname = useMutation(api.users.updateFullname)
+  const updateProfileImage = useMutation(api.users.updateProfileImage)
+  const deleteUserAccount = useMutation(api.users.deleteUserAccount)
+
+  // Get user data from Convex
+  const userData = useQuery(api.users.getUserByClerkId, {
+    clerkId: user?.id || "",
+  })
 
   // Refs for FlatLists to avoid the nesting error
   const postsListRef = useRef(null)
   const friendsListRef = useRef(null)
+
+  // Update local state when user data is loaded from Convex
+  useEffect(() => {
+    if (userData) {
+      setUsername(userData.username || user?.username || "")
+      setFullname(userData.fullname || user?.fullName || "")
+
+      // If there's a profile image in Convex, use it
+      if (userData.image) {
+        setProfileImage(userData.image)
+      }
+    }
+  }, [userData, user])
 
   // Load profile image from AsyncStorage
   useEffect(() => {
@@ -375,11 +410,59 @@ export default function Profile() {
     }
   }, [searchUsername, addedFriends])
 
-  const handleEditUsername = () => {
-    if (newUsername.trim()) {
-      setUsername(newUsername)
+  // Handle edit username
+  const handleEditUsername = async () => {
+    if (!newUsername.trim() || !user?.id) return
+
+    setIsUpdatingUsername(true)
+
+    try {
+      // Update username in Convex
+      await updateUsername({
+        clerkId: user.id,
+        username: newUsername.trim(),
+      })
+
+      // Update local state
+      setUsername(newUsername.trim())
       setShowEditUsername(false)
       setNewUsername("")
+
+      // Show success message
+      Alert.alert("Success", "Username updated successfully")
+    } catch (error) {
+      console.error("Error updating username:", error)
+      Alert.alert("Error", "Failed to update username. Please try again.")
+    } finally {
+      setIsUpdatingUsername(false)
+    }
+  }
+
+  // Handle edit fullname
+  const handleEditFullname = async () => {
+    if (!newFullname.trim() || !user?.id) return
+
+    setIsUpdatingFullname(true)
+
+    try {
+      // Update fullname in Convex
+      await updateFullname({
+        clerkId: user.id,
+        fullname: newFullname.trim(),
+      })
+
+      // Update local state
+      setFullname(newFullname.trim())
+      setShowEditFullname(false)
+      setNewFullname("")
+
+      // Show success message
+      Alert.alert("Success", "Name updated successfully")
+    } catch (error) {
+      console.error("Error updating name:", error)
+      Alert.alert("Error", "Failed to update name. Please try again.")
+    } finally {
+      setIsUpdatingFullname(false)
     }
   }
 
@@ -624,6 +707,23 @@ export default function Profile() {
         // Update state
         setProfileImage(imageUri)
 
+        // Update image in Convex if user is logged in
+        if (user?.id) {
+          setIsUpdatingImage(true)
+          try {
+            await updateProfileImage({
+              clerkId: user.id,
+              imageUrl: imageUri,
+            })
+            console.log("Profile image updated in Convex")
+          } catch (error) {
+            console.error("Error updating profile image in Convex:", error)
+            Alert.alert("Warning", "Profile image was saved locally but failed to update in the cloud.")
+          } finally {
+            setIsUpdatingImage(false)
+          }
+        }
+
         // Close modal
         setShowImageOptions(false)
       }
@@ -662,7 +762,17 @@ export default function Profile() {
     try {
       await signOut()
       setShowSettings(false)
-      // The Clerk SDK will handle the redirect to the sign-in page
+
+      // Clear local storage
+      await AsyncStorage.multiRemove(["profileImage", "addedFriends", "posts", "favorites"])
+
+      // Redirect to login page if on web
+      if (Platform.OS === "web") {
+        window.location.href = "/"
+      } else {
+        // For mobile, router will handle the redirect
+        router.replace("/")
+      }
     } catch (error) {
       console.error("Error signing out:", error)
       Alert.alert("Error", "Failed to sign out. Please try again.")
@@ -671,9 +781,14 @@ export default function Profile() {
 
   // Handle delete account
   const handleDeleteAccount = async () => {
+    if (!user?.id) {
+      Alert.alert("Error", "User not found. Please try again.")
+      return
+    }
+
     Alert.alert(
       "Delete Account",
-      "Are you sure you want to delete your account? This action cannot be undone.",
+      "Are you sure you want to delete your account? This action cannot be undone and will remove all your data.",
       [
         {
           text: "Cancel",
@@ -683,24 +798,39 @@ export default function Profile() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setIsDeleting(true)
+
             try {
-              // In a real app, you would call an API to delete the user's account
-              if (user) {
-                // Delete user data from AsyncStorage
-                await AsyncStorage.removeItem("profileImage")
-                await AsyncStorage.removeItem("addedFriends")
+              console.log("Starting account deletion process...")
 
-                // Sign out the user
-                await signOut()
-                setShowSettings(false)
+              // Delete user account in Convex
+              const result = await deleteUserAccount({
+                clerkId: user.id,
+              })
 
-                // The Clerk SDK will handle the redirect to the sign-in page
+              console.log("Account deletion result:", result)
+
+              // Clear all local data
+              await AsyncStorage.multiRemove(["profileImage", "addedFriends", "posts", "favorites"])
+
+              console.log("Local storage cleared")
+
+              // Sign out the user
+              await signOut()
+
+              // Redirect to login page if on web
+              if (Platform.OS === "web") {
+                window.location.href = "/"
               } else {
-                Alert.alert("Error", "User not found. Please try again.")
+                // For mobile, router will handle the redirect
+                router.replace("/")
               }
+
+              console.log("User signed out and redirected")
             } catch (error) {
               console.error("Error deleting account:", error)
               Alert.alert("Error", "Failed to delete account. Please try again.")
+              setIsDeleting(false)
             }
           },
         },
@@ -728,6 +858,9 @@ export default function Profile() {
         if (storedFriends) {
           setAddedFriends(JSON.parse(storedFriends))
         }
+      } else if (activeTab === "favorites") {
+        // Reload favorites
+        loadFavorites()
       }
     } catch (error) {
       console.error("Error refreshing data:", error)
@@ -953,10 +1086,16 @@ export default function Profile() {
           </TouchableOpacity>
 
           <View style={styles.usernameContainer}>
-            <Text style={styles.username}>{username || user?.username || "User"}</Text>
-            <Pressable style={styles.editUsernameButton} onPress={() => setShowEditUsername(true)}>
-              <Text style={styles.editUsernameText}>Change Username</Text>
-            </Pressable>
+            <Text style={styles.fullname}>{fullname || user?.fullName || "User"}</Text>
+            <Text style={styles.username}>@{username || user?.username || "user"}</Text>
+            <View style={styles.editButtonsContainer}>
+              <Pressable style={styles.editButton} onPress={() => setShowEditFullname(true)}>
+                <Text style={styles.editButtonText}>Change Name</Text>
+              </Pressable>
+              <Pressable style={styles.editButton} onPress={() => setShowEditUsername(true)}>
+                <Text style={styles.editButtonText}>Change Username</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.statsContainer}>
@@ -1027,15 +1166,73 @@ export default function Profile() {
                   setShowEditUsername(false)
                   setNewUsername("")
                 }}
+                disabled={isUpdatingUsername}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalButton, styles.saveButton, !newUsername.trim() && styles.disabledButton]}
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  (!newUsername.trim() || isUpdatingUsername) && styles.disabledButton,
+                ]}
                 onPress={handleEditUsername}
-                disabled={!newUsername.trim()}
+                disabled={!newUsername.trim() || isUpdatingUsername}
               >
-                <Text style={styles.saveButtonText}>Save</Text>
+                {isUpdatingUsername ? (
+                  <ActivityIndicator size="small" color="black" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Fullname Modal */}
+      <Modal
+        visible={showEditFullname}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowEditFullname(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Change Name</Text>
+            <TextInput
+              style={styles.usernameInput}
+              placeholder="Enter new name"
+              placeholderTextColor="#999"
+              value={newFullname}
+              onChangeText={setNewFullname}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditFullname(false)
+                  setNewFullname("")
+                }}
+                disabled={isUpdatingFullname}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalButton,
+                  styles.saveButton,
+                  (!newFullname.trim() || isUpdatingFullname) && styles.disabledButton,
+                ]}
+                onPress={handleEditFullname}
+                disabled={!newFullname.trim() || isUpdatingFullname}
+              >
+                {isUpdatingFullname ? (
+                  <ActivityIndicator size="small" color="black" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
               </Pressable>
             </View>
           </View>
@@ -1286,12 +1483,20 @@ export default function Profile() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Change Profile Picture</Text>
 
-            <TouchableOpacity style={styles.imageOptionButton} onPress={() => changeProfilePicture("camera")}>
+            <TouchableOpacity
+              style={styles.imageOptionButton}
+              onPress={() => changeProfilePicture("camera")}
+              disabled={isUpdatingImage}
+            >
               <Ionicons name="camera" size={24} color={COLORS.primary} style={styles.imageOptionIcon} />
               <Text style={styles.imageOptionText}>Take Photo</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.imageOptionButton} onPress={() => changeProfilePicture("gallery")}>
+            <TouchableOpacity
+              style={styles.imageOptionButton}
+              onPress={() => changeProfilePicture("gallery")}
+              disabled={isUpdatingImage}
+            >
               <Ionicons name="images" size={24} color={COLORS.primary} style={styles.imageOptionIcon} />
               <Text style={styles.imageOptionText}>Choose from Gallery</Text>
             </TouchableOpacity>
@@ -1299,8 +1504,13 @@ export default function Profile() {
             <TouchableOpacity
               style={[styles.imageOptionButton, styles.cancelImageButton]}
               onPress={() => setShowImageOptions(false)}
+              disabled={isUpdatingImage}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              {isUpdatingImage ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -1328,9 +1538,18 @@ export default function Profile() {
                 <Text style={styles.settingsOptionText}>Sign Out</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.settingsOption} onPress={handleDeleteAccount}>
-                <Ionicons name="trash-outline" size={24} color="#FF3B30" style={styles.settingsIcon} />
-                <Text style={[styles.settingsOptionText, styles.deleteAccountText]}>Delete Account</Text>
+              <TouchableOpacity style={styles.settingsOption} onPress={handleDeleteAccount} disabled={isDeleting}>
+                {isDeleting ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FF3B30" style={styles.settingsIcon} />
+                    <Text style={[styles.settingsOptionText, styles.deleteAccountText]}>Deleting Account...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="trash-outline" size={24} color="#FF3B30" style={styles.settingsIcon} />
+                    <Text style={[styles.settingsOptionText, styles.deleteAccountText]}>Delete Account</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1386,16 +1605,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  username: {
+  fullname: {
     color: "white",
     fontSize: 20,
     fontWeight: "bold",
+  },
+  username: {
+    color: "#999",
+    fontSize: 16,
     marginBottom: 5,
   },
-  editUsernameButton: {
-    marginTop: 5,
+  editButtonsContainer: {
+    flexDirection: "row",
+    marginTop: 8,
   },
-  editUsernameText: {
+  editButton: {
+    marginHorizontal: 5,
+  },
+  editButtonText: {
     color: COLORS.primary,
     fontSize: 14,
   },
@@ -1916,6 +2143,7 @@ const styles = StyleSheet.create({
   },
   settingsIcon: {
     marginRight: 15,
+    width: 24,
   },
   settingsOptionText: {
     color: "white",
