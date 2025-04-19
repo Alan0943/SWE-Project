@@ -15,19 +15,22 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Alert,
+  Share,
 } from "react-native"
 import { styles as authStyles } from "../../styles/auth.styles"
 import { useRouter } from "expo-router"
 import FlipCard from "react-native-flip-card"
 import { useFavorites } from "../../src/contexts/FavoritesContext"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useUser } from "@clerk/clerk-expo"
 import { COLORS } from "@/constants/theme"
+import { api } from "@/convex/_generated/api"
+import { useQuery, useMutation } from "convex/react"
+import type { Id } from "@/convex/_generated/dataModel"
 
 // Post type definition
 interface Post {
-  id: string
+  id: Id<"posts"> | string
   imageUri: string
   caption: string
   username: string
@@ -39,8 +42,8 @@ interface Post {
 }
 
 interface Comment {
-  id: string
-  userId: string
+  id: Id<"comments"> | string
+  userId: Id<"users"> | string
   username: string
   text: string
   timestamp: number
@@ -50,11 +53,17 @@ export default function Index() {
   const router = useRouter()
   const { favorites, toggleFavorite } = useFavorites()
   const { user } = useUser()
-  const [posts, setPosts] = useState<Post[]>([])
-  const [loading, setLoading] = useState(true)
   const [commentText, setCommentText] = useState("")
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [commentModalVisible, setCommentModalVisible] = useState(false)
+
+  // Fetch posts from Convex
+  const posts = useQuery(api.posts.getAllPosts) || []
+  const loading = posts === undefined
+
+  // Convex mutations
+  const toggleLikeMutation = useMutation(api.posts.toggleLike)
+  const addCommentMutation = useMutation(api.posts.addComment)
 
   // ✅ Bar data
   const bars = [
@@ -109,76 +118,60 @@ export default function Index() {
     },
   ]
 
-  // Load posts from AsyncStorage
-  const loadPosts = async () => {
-    try {
-      setLoading(true)
-      const storedPosts = await AsyncStorage.getItem("posts")
-      if (storedPosts) {
-        setPosts(JSON.parse(storedPosts))
-      }
-    } catch (error) {
-      console.error("Error loading posts:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Save posts to AsyncStorage
-  const savePosts = async (updatedPosts: Post[]) => {
-    try {
-      await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
-      setPosts(updatedPosts)
-    } catch (error) {
-      console.error("Error saving posts:", error)
-    }
-  }
-
   // Handle like post
-  const handleLikePost = (postId: string) => {
+  const handleLikePost = async (postId: Id<"posts">) => {
     if (!user) return
 
-    const updatedPosts = posts.map((post) => {
-      if (post.id === postId) {
-        const userLiked = post.likes.includes(user.id)
-        const updatedLikes = userLiked ? post.likes.filter((id) => id !== user.id) : [...post.likes, user.id]
-
-        return {
-          ...post,
-          likes: updatedLikes,
-        }
-      }
-      return post
-    })
-
-    savePosts(updatedPosts)
+    try {
+      await toggleLikeMutation({ postId })
+    } catch (error) {
+      console.error("Error liking post:", error)
+      Alert.alert("Error", "Failed to like post. Please try again.")
+    }
   }
 
   // Handle add comment
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!user || !selectedPost || !commentText.trim()) return
 
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      userId: user.id,
-      username: user.username || user.firstName || "Anonymous",
-      text: commentText.trim(),
-      timestamp: Date.now(),
+    try {
+      await addCommentMutation({
+        postId: selectedPost.id as Id<"posts">,
+        content: commentText.trim(),
+      })
+
+      setCommentText("")
+      setCommentModalVisible(false)
+    } catch (error) {
+      console.error("Error adding comment:", error)
+      Alert.alert("Error", "Failed to add comment. Please try again.")
     }
+  }
 
-    const updatedPosts = posts.map((post) => {
-      if (post.id === selectedPost.id) {
-        return {
-          ...post,
-          comments: [...post.comments, newComment],
+  // Share post
+  const sharePost = async (post: Post) => {
+    try {
+      const result = await Share.share({
+        message: `Check out this post from ${post.username}${post.barTag ? ` at ${post.barTag}` : ""}!`,
+        url: post.imageUri, // This may not work on all platforms, but will be included when available
+      })
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+          console.log(`Shared with ${result.activityType}`)
+        } else {
+          // shared
+          console.log("Shared successfully")
         }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+        console.log("Share dismissed")
       }
-      return post
-    })
-
-    savePosts(updatedPosts)
-    setCommentText("")
-    setCommentModalVisible(false)
+    } catch (error) {
+      Alert.alert("Error", "Something went wrong sharing this post")
+      console.error("Error sharing:", error)
+    }
   }
 
   // Format timestamp
@@ -206,16 +199,6 @@ export default function Index() {
         Image.prefetch(img.uri)
       })
     }
-
-    // Load posts on mount and set up refresh interval
-    loadPosts()
-
-    // Refresh posts every 30 seconds
-    const interval = setInterval(() => {
-      loadPosts()
-    }, 30000)
-
-    return () => clearInterval(interval)
   }, [])
 
   const getWaitColor = (minutes: number) => {
@@ -242,6 +225,11 @@ export default function Index() {
     return `${minutes} minutes ⚠️`
   }
 
+  // Check if post belongs to current user
+  const isUserPost = (post: Post) => {
+    return user && post.username === (user.username || user.firstName || "Anonymous")
+  }
+
   // Render comment modal
   const renderCommentModal = () => {
     if (!selectedPost) return null
@@ -264,7 +252,7 @@ export default function Index() {
 
             <FlatList
               data={selectedPost.comments}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => item.id.toString()}
               renderItem={({ item }) => (
                 <View style={feedStyles.commentItem}>
                   <Text style={feedStyles.commentUsername}>{item.username}</Text>
@@ -310,7 +298,7 @@ export default function Index() {
     const isLiked = user ? post.likes.includes(user.id) : false
 
     return (
-      <View style={feedStyles.postContainer}>
+      <TouchableOpacity style={feedStyles.postContainer} activeOpacity={1}>
         {/* Post Header */}
         <View style={feedStyles.postHeader}>
           <View style={feedStyles.postUser}>
@@ -338,7 +326,13 @@ export default function Index() {
 
         {/* Post Actions */}
         <View style={feedStyles.postActions}>
-          <TouchableOpacity style={feedStyles.actionButton} onPress={() => handleLikePost(post.id)}>
+          <TouchableOpacity
+            style={feedStyles.actionButton}
+            onPress={(e) => {
+              e.stopPropagation()
+              handleLikePost(post.id as Id<"posts">)
+            }}
+          >
             <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "red" : "white"} />
             <Text style={feedStyles.actionText}>
               {post.likes.length > 0 ? post.likes.length : ""}{" "}
@@ -348,7 +342,8 @@ export default function Index() {
 
           <TouchableOpacity
             style={feedStyles.actionButton}
-            onPress={() => {
+            onPress={(e) => {
+              e.stopPropagation()
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -362,9 +357,9 @@ export default function Index() {
 
           <TouchableOpacity
             style={feedStyles.actionButton}
-            onPress={() => {
-              // Share functionality
-              Alert.alert("Share", "Sharing functionality will be implemented here")
+            onPress={(e) => {
+              e.stopPropagation()
+              sharePost(post)
             }}
           >
             <Ionicons name="share-outline" size={22} color="white" />
@@ -383,7 +378,8 @@ export default function Index() {
         {post.comments.length > 0 && (
           <TouchableOpacity
             style={feedStyles.commentsPreview}
-            onPress={() => {
+            onPress={(e) => {
+              e.stopPropagation()
               setSelectedPost(post)
               setCommentModalVisible(true)
             }}
@@ -400,7 +396,7 @@ export default function Index() {
             )}
           </TouchableOpacity>
         )}
-      </View>
+      </TouchableOpacity>
     )
   }
 
@@ -542,12 +538,10 @@ export default function Index() {
         ) : (
           <FlatList
             data={posts}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.id.toString()}
             renderItem={({ item }) => renderPostItem(item)}
             contentContainerStyle={{ paddingBottom: 20 }}
             showsVerticalScrollIndicator={false}
-            refreshing={loading}
-            onRefresh={loadPosts}
           />
         )}
       </View>

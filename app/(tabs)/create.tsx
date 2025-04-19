@@ -16,36 +16,18 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
+  Platform,
 } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 import { useUser } from "@clerk/clerk-expo"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useRouter } from "expo-router"
 import { COLORS } from "@/constants/theme"
+import { api } from "@/convex/_generated/api"
+import { useMutation } from "convex/react"
+import * as FileSystem from "expo-file-system"
 
 const { width, height } = Dimensions.get("window")
-
-// Post type definition
-interface Post {
-  id: string
-  imageUri: string
-  caption: string
-  username: string
-  userImageUrl: string | null
-  timestamp: number
-  likes: string[] // array of user IDs who liked the post
-  comments: Comment[]
-  barTag: string | null
-}
-
-interface Comment {
-  id: string
-  userId: string
-  username: string
-  text: string
-  timestamp: number
-}
 
 export default function Create() {
   const { user } = useUser()
@@ -55,6 +37,10 @@ export default function Create() {
   const [isLoading, setIsLoading] = useState(false)
   const [selectedBarTag, setSelectedBarTag] = useState<string | null>(null)
   const [showBarPicker, setShowBarPicker] = useState(false)
+
+  // Convex mutations
+  const generatedUploadUrl = useMutation(api.posts.generatedUploadUrl)
+  const createPost = useMutation(api.posts.createPost)
 
   // Bar data for tags
   const bars = [
@@ -66,26 +52,6 @@ export default function Create() {
     { name: "Lil Rudy's", image: require("../../assets/images/LilRudys.jpg") },
     { name: "Range", image: require("../../assets/images/range.jpg") },
   ]
-
-  // Load posts from AsyncStorage
-  const loadPosts = async () => {
-    try {
-      const storedPosts = await AsyncStorage.getItem("posts")
-      return storedPosts ? JSON.parse(storedPosts) : []
-    } catch (error) {
-      console.error("Error loading posts:", error)
-      return []
-    }
-  }
-
-  // Save posts to AsyncStorage
-  const savePosts = async (updatedPosts: Post[]) => {
-    try {
-      await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
-    } catch (error) {
-      console.error("Error saving posts:", error)
-    }
-  }
 
   // Pick an image from the library
   const pickImage = async () => {
@@ -101,8 +67,52 @@ export default function Create() {
     }
   }
 
-  // Create a new post
-  const createPost = async () => {
+  // Upload image to Convex storage
+  const uploadImageToConvex = async (uri: string) => {
+    try {
+      // Get upload URL from Convex
+      const uploadUrl = await generatedUploadUrl()
+
+      if (Platform.OS === "web") {
+        // For web, we need to fetch the image and upload it as a blob
+        const response = await fetch(uri)
+        const blob = await response.blob()
+
+        // Upload the blob directly
+        const result = await fetch(uploadUrl, {
+          method: "POST",
+          body: blob,
+        })
+
+        if (!result.ok) {
+          throw new Error(`Upload failed with status ${result.status}`)
+        }
+
+        const data = await result.json()
+        return data.storageId
+      } else {
+        // For native platforms, use FileSystem
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+          httpMethod: "POST",
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          mimeType: "image/jpeg",
+        })
+
+        if (uploadResult.status !== 200) {
+          throw new Error(`Upload failed with status ${uploadResult.status}`)
+        }
+
+        const { storageId } = JSON.parse(uploadResult.body)
+        return storageId
+      }
+    } catch (error) {
+      console.error("Error uploading image:", error)
+      throw error
+    }
+  }
+
+  // Handle post creation
+  const handleCreatePost = async () => {
     if (!selectedImage) {
       Alert.alert("Error", "Please select an image")
       return
@@ -126,27 +136,27 @@ export default function Create() {
     setIsLoading(true)
 
     try {
-      // Load existing posts
-      const existingPosts = await loadPosts()
+      console.log("Starting post creation process...")
 
-      // Create new post object
-      const newPost: Post = {
-        id: Date.now().toString(),
-        imageUri: selectedImage,
-        caption: caption.trim(),
-        username: user.username || user.firstName || "Anonymous",
-        userImageUrl: user.imageUrl,
-        timestamp: Date.now(),
-        likes: [],
-        comments: [],
-        barTag: selectedBarTag,
+      // Step 1: Upload image to Convex storage
+      console.log("Uploading image...")
+      const storageId = await uploadImageToConvex(selectedImage)
+
+      if (!storageId) {
+        throw new Error("Failed to get storage ID after upload")
       }
 
-      // Add to posts array
-      const updatedPosts = [newPost, ...existingPosts]
+      console.log("Image uploaded successfully, storageId:", storageId)
 
-      // Save to storage
-      await savePosts(updatedPosts)
+      // Step 2: Create the post in Convex
+      console.log("Creating post with caption, storageId, and barTag...")
+      const postId = await createPost({
+        caption: caption.trim(),
+        storageId,
+        barTag: selectedBarTag,
+      })
+
+      console.log("Post created successfully:", postId)
 
       // Reset form
       setSelectedImage(null)
@@ -165,7 +175,7 @@ export default function Create() {
       ])
     } catch (error) {
       console.error("Error creating post:", error)
-      Alert.alert("Error", "Failed to create post. Please try again.")
+      Alert.alert("Error", `Failed to create post: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setIsLoading(false)
     }
@@ -246,7 +256,7 @@ export default function Create() {
               styles.postButton,
               (!selectedImage || !caption.trim() || !selectedBarTag || isLoading) && styles.disabledButton,
             ]}
-            onPress={createPost}
+            onPress={handleCreatePost}
             disabled={!selectedImage || !caption.trim() || !selectedBarTag || isLoading}
           >
             {isLoading ? (
@@ -275,6 +285,7 @@ export default function Create() {
             </View>
 
             <FlatList
+              key="create-bar-list"
               data={bars}
               renderItem={renderBarItem}
               keyExtractor={(item) => item.name}
