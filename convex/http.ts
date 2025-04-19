@@ -6,7 +6,7 @@ import { api } from "./_generated/api"
 const http = httpRouter()
 
 http.route({
-  path: "/clerk-webhook",
+  path: "/clerk-update",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     // Use uppercase for environment variables
