@@ -103,6 +103,68 @@ export const getAllPosts = query(async (ctx) => {
   return postsWithUserInfo
 })
 
+// Get posts by user ID
+export const getPostsByUserId = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const posts = await ctx.db
+      .query("posts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect()
+
+    // Fetch user information for each post
+    const postsWithUserInfo = await Promise.all(
+      posts.map(async (post) => {
+        const user = await ctx.db.get(post.userId)
+
+        // Get likes for this post
+        const likes = await ctx.db
+          .query("likes")
+          .withIndex("by_post", (q) => q.eq("postId", post._id))
+          .collect()
+
+        // Get comments for this post
+        const comments = await ctx.db
+          .query("comments")
+          .withIndex("by_post", (q) => q.eq("postId", post._id))
+          .collect()
+
+        // Get user info for each comment
+        const commentsWithUserInfo = await Promise.all(
+          comments.map(async (comment) => {
+            const commentUser = await ctx.db.get(comment.userId)
+            return {
+              ...comment,
+              username: commentUser?.username || "Unknown User",
+            }
+          }),
+        )
+
+        return {
+          id: post._id,
+          imageUri: post.imageUrl,
+          caption: post.caption || "",
+          username: user?.username || "Unknown User",
+          userImageUrl: user?.image || null,
+          timestamp: post._creationTime,
+          likes: likes.map((like) => like.userId),
+          comments: commentsWithUserInfo.map((comment) => ({
+            id: comment._id,
+            userId: comment.userId,
+            username: comment.username,
+            text: comment.content,
+            timestamp: comment._creationTime,
+          })),
+          barTag: post.barTag || null,
+        }
+      }),
+    )
+
+    return postsWithUserInfo
+  },
+})
+
 // Toggle like on a post
 export const toggleLike = mutation({
   args: {
@@ -193,3 +255,4 @@ export const addComment = mutation({
     }
   },
 })
+
