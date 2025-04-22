@@ -273,7 +273,7 @@ export default function Index() {
   // Calculate responsive dimensions
   const cardHeight = 125 // Fixed height as requested
   const leftImageWidth = cardHeight // Make image width equal to height for square aspect ratio
-  const cardWidth = isPhone ? "94%" : "92%"
+  const cardWidth = isPhone ? "94%" : 1000
   const optionButtonHeight = isPhone ? 32 : 36
   const fontSize = isPhone ? { title: 14, text: 11, small: 9 } : { title: 16, text: 12, small: 10 }
 
