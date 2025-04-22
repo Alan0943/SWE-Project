@@ -15,9 +15,9 @@ export default defineSchema({
   }).index("by_clerk_id", ["clerkId"]),
 
   posts: defineTable({
-    userId: v.string(), // Changed from v.id("users")
+    userId: v.id("users"),
     imageUrl: v.string(),
-    storageId: v.string(), // Changed from v.id("_storage")
+    storageId: v.string(), // Changed from v.id("_storage") to v.string()
     caption: v.optional(v.string()),
     barTag: v.optional(v.string()),
     likes: v.number(),
@@ -25,37 +25,37 @@ export default defineSchema({
   }).index("by_user", ["userId"]),
 
   likes: defineTable({
-    postId: v.string(), // Changed from v.id("posts")
-    userId: v.string(), // Changed from v.id("users")
+    postId: v.id("posts"),
+    userId: v.id("users"),
   })
     .index("by_post", ["postId"])
     .index("by_user_and_post", ["userId", "postId"]),
 
   comments: defineTable({
-    postId: v.string(), // Changed from v.id("posts")
-    userId: v.string(), // Changed from v.id("users")
+    postId: v.id("posts"),
+    userId: v.id("users"),
     content: v.string(),
   }).index("by_post", ["postId"]),
 
   follows: defineTable({
-    followerId: v.string(), // Changed from v.id("users")
-    followingId: v.string(), // Changed from v.id("users")
+    followerId: v.id("users"),
+    followingId: v.id("users"),
   })
     .index("by_follower", ["followerId"])
     .index("by_following", ["followingId"])
     .index("by_both", ["followerId", "followingId"]),
 
   notifications: defineTable({
-    receiverId: v.string(), // Changed from v.id("users")
-    senderId: v.string(), // Changed from v.id("users")
+    receiverId: v.id("users"),
+    senderId: v.id("users"),
     type: v.union(v.literal("like"), v.literal("comment"), v.literal("follow")),
-    postId: v.optional(v.string()), // Changed from v.optional(v.id("posts"))
-    commentId: v.optional(v.string()), // Changed from v.optional(v.id("comments"))
+    postId: v.optional(v.id("posts")),
+    commentId: v.optional(v.id("comments")),
   }).index("by_receiver", ["receiverId"]),
 
   bookmarks: defineTable({
-    userId: v.string(), // Changed from v.id("users")
-    postId: v.string(), // Changed from v.id("posts")
+    userId: v.id("users"),
+    postId: v.id("posts"),
   })
     .index("by_user", ["userId"])
     .index("by_post", ["postId"])
@@ -74,8 +74,8 @@ export default defineSchema({
 
   // New table for bar reports
   barReports: defineTable({
-    barId: v.string(), // Changed from v.id("bars")
-    userId: v.string(), // Changed from v.id("users")
+    barId: v.id("bars"),
+    userId: v.id("users"),
     waitTime: v.number(),
     coverCharge: v.number(),
     timestamp: v.number(), // timestamp

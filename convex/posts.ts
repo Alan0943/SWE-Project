@@ -1,6 +1,5 @@
 import { v } from "convex/values"
 import { mutation, query } from "./_generated/server"
-import { Id } from "./_generated/dataModel"
 
 export const generatedUploadUrl = mutation(async (ctx) => {
   const identity = await ctx.auth.getUserIdentity()
@@ -11,8 +10,8 @@ export const generatedUploadUrl = mutation(async (ctx) => {
 export const createPost = mutation({
   args: {
     caption: v.optional(v.string()),
-    storageId: v.string(),
-    barTag: v.optional(v.string()),
+    storageId: v.id("_storage"),
+    barTag: v.optional(v.string()), // Added barTag parameter
   },
 
   handler: async (ctx, args) => {
@@ -26,9 +25,7 @@ export const createPost = mutation({
 
     if (!currentUser) throw new Error("User not found")
 
-    // Convert string to Id<"_storage">
-    const storageId = args.storageId as unknown as Id<"_storage">
-    const imageUrl = await ctx.storage.getUrl(storageId)
+    const imageUrl = await ctx.storage.getUrl(args.storageId)
     if (!imageUrl) throw new Error("image not found")
 
     // create post
@@ -36,7 +33,7 @@ export const createPost = mutation({
       userId: currentUser._id,
       imageUrl,
       caption: args.caption,
-      barTag: args.barTag,
+      barTag: args.barTag, // Added barTag field
       likes: 0,
       comments: 0,
       storageId: args.storageId,
@@ -58,9 +55,7 @@ export const getAllPosts = query(async (ctx) => {
   // Fetch user information for each post
   const postsWithUserInfo = await Promise.all(
     posts.map(async (post) => {
-      // Convert string to Id<"users">
-      const userId = post.userId as unknown as Id<"users">
-      const user = await ctx.db.get(userId)
+      const user = await ctx.db.get(post.userId)
 
       // Get likes for this post
       const likes = await ctx.db
@@ -77,9 +72,7 @@ export const getAllPosts = query(async (ctx) => {
       // Get user info for each comment
       const commentsWithUserInfo = await Promise.all(
         comments.map(async (comment) => {
-          // Convert string to Id<"users">
-          const commentUserId = comment.userId as unknown as Id<"users">
-          const commentUser = await ctx.db.get(commentUserId)
+          const commentUser = await ctx.db.get(comment.userId)
           return {
             ...comment,
             username: commentUser?.username || "Unknown User",
@@ -113,7 +106,7 @@ export const getAllPosts = query(async (ctx) => {
 // Toggle like on a post
 export const toggleLike = mutation({
   args: {
-    postId: v.string(),
+    postId: v.id("posts"),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -126,9 +119,6 @@ export const toggleLike = mutation({
 
     if (!currentUser) throw new Error("User not found")
 
-    // Convert string to Id<"posts">
-    const postId = args.postId as unknown as Id<"posts">
-
     // Check if user already liked the post
     const existingLike = await ctx.db
       .query("likes")
@@ -140,9 +130,9 @@ export const toggleLike = mutation({
       await ctx.db.delete(existingLike._id)
 
       // Decrement likes count
-      const post = await ctx.db.get(postId)
+      const post = await ctx.db.get(args.postId)
       if (post) {
-        await ctx.db.patch(postId, { likes: Math.max(0, post.likes - 1) })
+        await ctx.db.patch(args.postId, { likes: Math.max(0, post.likes - 1) })
       }
 
       return { liked: false }
@@ -154,9 +144,9 @@ export const toggleLike = mutation({
       })
 
       // Increment likes count
-      const post = await ctx.db.get(postId)
+      const post = await ctx.db.get(args.postId)
       if (post) {
-        await ctx.db.patch(postId, { likes: post.likes + 1 })
+        await ctx.db.patch(args.postId, { likes: post.likes + 1 })
       }
 
       return { liked: true }
@@ -167,7 +157,7 @@ export const toggleLike = mutation({
 // Add a comment to a post
 export const addComment = mutation({
   args: {
-    postId: v.string(),
+    postId: v.id("posts"),
     content: v.string(),
   },
   handler: async (ctx, args) => {
@@ -181,9 +171,6 @@ export const addComment = mutation({
 
     if (!currentUser) throw new Error("User not found")
 
-    // Convert string to Id<"posts">
-    const postId = args.postId as unknown as Id<"posts">
-
     // Insert the comment
     const commentId = await ctx.db.insert("comments", {
       postId: args.postId,
@@ -192,9 +179,9 @@ export const addComment = mutation({
     })
 
     // Increment comments count
-    const post = await ctx.db.get(postId)
+    const post = await ctx.db.get(args.postId)
     if (post) {
-      await ctx.db.patch(postId, { comments: post.comments + 1 })
+      await ctx.db.patch(args.postId, { comments: post.comments + 1 })
     }
 
     return {

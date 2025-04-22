@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, memo, useMemo } from "react"
+import { useState, useEffect } from "react"
 import {
   Image,
   Text,
@@ -52,6 +52,8 @@ interface Comment {
   timestamp: number
 }
 
+type SortOption = "recent" | "popular" | "mostLiked"
+
 export default function Index() {
   const router = useRouter()
   const { favorites, toggleFavorite } = useFavorites()
@@ -60,10 +62,41 @@ export default function Index() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [commentModalVisible, setCommentModalVisible] = useState(false)
   const [fullImageModalVisible, setFullImageModalVisible] = useState(false)
+  const [sortOption, setSortOption] = useState<SortOption>("recent")
 
   // Fetch posts from Convex
   const convexPosts = useQuery(api.posts.getAllPosts) || []
   const loading = convexPosts === undefined
+
+  // Sorted posts
+  const [sortedPosts, setSortedPosts] = useState<Post[]>([])
+
+  // Sort posts based on selected option
+  useEffect(() => {
+    if (!convexPosts || convexPosts.length === 0) {
+      setSortedPosts([])
+      return
+    }
+
+    let sorted = [...convexPosts]
+
+    switch (sortOption) {
+      case "recent":
+        // Sort by timestamp (newest first)
+        sorted = sorted.sort((a, b) => b.timestamp - a.timestamp)
+        break
+      case "popular":
+        // Sort by comment count (most comments first)
+        sorted = sorted.sort((a, b) => b.comments.length - a.comments.length)
+        break
+      case "mostLiked":
+        // Sort by like count (most likes first)
+        sorted = sorted.sort((a, b) => b.likes.length - a.likes.length)
+        break
+    }
+
+    setSortedPosts(sorted)
+  }, [convexPosts, sortOption])
 
   // Convex mutations
   const toggleLikeMutation = useMutation(api.posts.toggleLike)
@@ -123,7 +156,7 @@ export default function Index() {
   ]
 
   // Handle like post
-  const handleLikePost = useCallback(async (postId: Id<"posts">) => {
+  const handleLikePost = async (postId: Id<"posts">) => {
     if (!isUserLoaded || !user) return
 
     try {
@@ -132,9 +165,7 @@ export default function Index() {
       console.error("Error liking post:", error)
       Alert.alert("Error", "Failed to like post. Please try again.")
     }
-  },
-  [isUserLoaded, user, toggleLikeMutation],
-)
+  }
 
   // Handle add comment
   const handleAddComment = async () => {
@@ -155,7 +186,7 @@ export default function Index() {
   }
 
   // Share post
-  const sharePost = useCallback(async (post: Post) => {
+  const sharePost = async (post: Post) => {
     try {
       const result = await Share.share({
         message: `Check out this post from ${post.username}${post.barTag ? ` at ${post.barTag}` : ""}!`,
@@ -165,10 +196,10 @@ export default function Index() {
       Alert.alert("Error", "Something went wrong sharing this post")
       console.error("Error sharing:", error)
     }
-  }, [])
+  }
 
   // Format timestamp
-  const formatTimestamp = useCallback((timestamp: number) => {
+  const formatTimestamp = (timestamp: number) => {
     const now = new Date()
     const postDate = new Date(timestamp)
     const diffInSeconds = Math.floor((now.getTime() - postDate.getTime()) / 1000)
@@ -182,7 +213,7 @@ export default function Index() {
     } else {
       return postDate.toLocaleDateString()
     }
-  }, [])
+  }
 
   // ✅ Preload images on mount (only on iOS/Android)
   useEffect(() => {
@@ -418,7 +449,6 @@ export default function Index() {
         )}
       </View>
     )
-    
   }
 
   // Render bar item
@@ -539,6 +569,35 @@ export default function Index() {
         />
       </View>
 
+      {/* Filter Options */}
+      <View style={feedStyles.filterContainer}>
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "recent" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("recent")}
+        >
+          <Ionicons name="time-outline" size={18} color={sortOption === "recent" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "recent" && feedStyles.activeFilterText]}>Recent</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "popular" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("popular")}
+        >
+          <Ionicons name="chatbubble-outline" size={18} color={sortOption === "popular" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "popular" && feedStyles.activeFilterText]}>Hottest</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[feedStyles.filterOption, sortOption === "mostLiked" && feedStyles.activeFilterOption]}
+          onPress={() => setSortOption("mostLiked")}
+        >
+          <Ionicons name="heart-outline" size={18} color={sortOption === "mostLiked" ? COLORS.primary : "white"} />
+          <Text style={[feedStyles.filterText, sortOption === "mostLiked" && feedStyles.activeFilterText]}>
+            Most Liked
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Posts Feed */}
       <View style={feedStyles.postsContainer}>
         {loading ? (
@@ -546,7 +605,7 @@ export default function Index() {
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={feedStyles.loadingText}>Loading posts...</Text>
           </View>
-        ) : convexPosts.length === 0 ? (
+        ) : sortedPosts.length === 0 ? (
           <View style={feedStyles.emptyContainer}>
             <Ionicons name="images-outline" size={60} color="#555" />
             <Text style={feedStyles.emptyText}>No posts yet</Text>
@@ -558,7 +617,7 @@ export default function Index() {
           </View>
         ) : (
           <FlatList
-            data={convexPosts}
+            data={sortedPosts}
             keyExtractor={(item) => item.id.toString()}
             renderItem={renderPostItem}
             contentContainerStyle={{ paddingBottom: 20 }}
@@ -577,6 +636,35 @@ export default function Index() {
 }
 
 const feedStyles = StyleSheet.create({
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: "#222",
+    marginHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  filterOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  activeFilterOption: {
+    backgroundColor: "rgba(74, 222, 128, 0.1)",
+  },
+  filterText: {
+    color: "white",
+    marginLeft: 6,
+    fontSize: 14,
+  },
+  activeFilterText: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
   tabBar: {
     flexDirection: "row",
     borderBottomWidth: 1,

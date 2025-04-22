@@ -1,6 +1,5 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
-import { Id } from "./_generated/dataModel"
 
 // Initialize bars in the database (run this once)
 export const initializeBars = mutation({
@@ -112,7 +111,7 @@ export const getAllBars = query({
 // Submit a report for a bar
 export const submitBarReport = mutation({
   args: {
-    barId: v.string(),
+    barId: v.id("bars"),
     waitTime: v.number(),
     coverCharge: v.number(),
   },
@@ -128,9 +127,8 @@ export const submitBarReport = mutation({
 
     if (!currentUser) throw new Error("User not found")
 
-    // Get the bar - we need to convert string to Id<"bars">
-    const barId = args.barId as unknown as Id<"bars">
-    const bar = await ctx.db.get(barId)
+    // Get the bar
+    const bar = await ctx.db.get(args.barId)
     if (!bar) throw new Error("Bar not found")
 
     // Check if user already reported this bar recently (within the last hour)
@@ -182,7 +180,7 @@ export const submitBarReport = mutation({
     const newAverageCoverCharge = reportCount > 0 ? Math.round(totalCoverCharge / reportCount) : 0
 
     // Update the bar with new averages
-    await ctx.db.patch(barId, {
+    await ctx.db.patch(args.barId, {
       averageWaitTime: newAverageWaitTime,
       averageCoverCharge: newAverageCoverCharge,
       reportCount: reportCount,
@@ -204,11 +202,9 @@ export const submitBarReport = mutation({
 
 // Get a specific bar by ID
 export const getBarById = query({
-  args: { barId: v.string() },
+  args: { barId: v.id("bars") },
   handler: async (ctx, args) => {
-    // Convert string to Id<"bars">
-    const barId = args.barId as unknown as Id<"bars">
-    const bar = await ctx.db.get(barId)
+    const bar = await ctx.db.get(args.barId)
     if (!bar) throw new Error("Bar not found")
 
     return {
