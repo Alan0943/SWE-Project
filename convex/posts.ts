@@ -48,6 +48,63 @@ export const createPost = mutation({
   },
 })
 
+// Delete a post
+export const deletePost = mutation({
+  args: {
+    postId: v.id("posts"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) throw new Error("Unauthorized")
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first()
+
+    if (!currentUser) throw new Error("User not found")
+
+    // Get the post
+    const post = await ctx.db.get(args.postId)
+    if (!post) throw new Error("Post not found")
+
+    // Check if the user is the owner of the post
+    if (post.userId.toString() !== currentUser._id.toString()) {
+      throw new Error("Not authorized to delete this post")
+    }
+
+    // Delete all likes for this post
+    const likes = await ctx.db
+      .query("likes")
+      .withIndex("by_post", (q) => q.eq("postId", args.postId))
+      .collect()
+
+    for (const like of likes) {
+      await ctx.db.delete(like._id)
+    }
+
+    // Delete all comments for this post
+    const comments = await ctx.db
+      .query("comments")
+      .withIndex("by_post", (q) => q.eq("postId", args.postId))
+      .collect()
+
+    for (const comment of comments) {
+      await ctx.db.delete(comment._id)
+    }
+
+    // Delete the post
+    await ctx.db.delete(args.postId)
+
+    // Decrement the user's post count
+    await ctx.db.patch(currentUser._id, {
+      posts: Math.max(0, currentUser.posts - 1),
+    })
+
+    return { success: true }
+  },
+})
+
 // Get all posts for the feed
 export const getAllPosts = query(async (ctx) => {
   const posts = await ctx.db.query("posts").order("desc").collect()
@@ -255,4 +312,3 @@ export const addComment = mutation({
     }
   },
 })
-

@@ -243,6 +243,7 @@ export default function Profile() {
   const [isUpdatingFullname, setIsUpdatingFullname] = useState(false)
   const [isUpdatingImage, setIsUpdatingImage] = useState(false)
   const [isLoadingPosts, setIsLoadingPosts] = useState(true)
+  const [isDeletingPost, setIsDeletingPost] = useState(false)
 
   // Convex mutations
   const updateUsername = useMutation(api.users.updateUsername)
@@ -251,6 +252,7 @@ export default function Profile() {
   const deleteUserAccount = useMutation(api.users.deleteUserAccount)
   const toggleLikeMutation = useMutation(api.posts.toggleLike)
   const addCommentMutation = useMutation(api.posts.addComment)
+  const deletePostMutation = useMutation(api.posts.deletePost)
 
   // Get user data from Convex
   const userData = useQuery(api.users.getUserByClerkId, {
@@ -533,6 +535,52 @@ export default function Profile() {
     setShowPostDetail(true)
   }
 
+  // Delete post
+  const handleDeletePost = async (postId: string, event?: any) => {
+    // Stop event propagation if provided (to prevent opening post details)
+    if (event) {
+      event.stopPropagation()
+    }
+
+    // Confirm deletion
+    Alert.alert(
+      "Delete Post",
+      "Are you sure you want to delete this post? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeletingPost(true)
+            try {
+              if (typeof postId === "string" && postId.startsWith("post_")) {
+                await deletePostMutation({ postId: postId as Id<"posts"> })
+
+                // Close the post detail modal if it's open
+                if (selectedPost && selectedPost.id === postId) {
+                  setShowPostDetail(false)
+                }
+
+                // Show success message
+                Alert.alert("Success", "Post deleted successfully")
+              }
+            } catch (error) {
+              console.error("Error deleting post:", error)
+              Alert.alert("Error", "Failed to delete post. Please try again.")
+            } finally {
+              setIsDeletingPost(false)
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    )
+  }
+
   // Share post
   const sharePost = async (post: Post) => {
     try {
@@ -766,6 +814,18 @@ export default function Profile() {
   const renderPostGridItem = ({ item }: { item: Post }) => (
     <Pressable style={styles.postGridItem} onPress={() => viewPostDetails(item)}>
       <Image source={{ uri: item.imageUri }} style={styles.postGridImage} />
+
+      {/* Delete button in top right corner */}
+      <TouchableOpacity
+        style={styles.deletePostButton}
+        onPress={(event) => handleDeletePost(item.id, event)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.deletePostButtonInner}>
+          <Ionicons name="trash-outline" size={16} color="white" />
+        </View>
+      </TouchableOpacity>
+
       <View style={styles.postGridOverlay}>
         <View style={styles.postGridStats}>
           <View style={styles.postGridStat}>
@@ -1198,6 +1258,14 @@ export default function Profile() {
             <View style={styles.postDetailHeader}>
               <Text style={styles.postDetailTitle}>Post</Text>
               <View style={styles.postDetailHeaderButtons}>
+                {selectedPost && (
+                  <TouchableOpacity
+                    style={styles.postDetailDeleteButton}
+                    onPress={() => handleDeletePost(selectedPost.id)}
+                  >
+                    <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity onPress={() => setShowPostDetail(false)} style={styles.closeButton}>
                   <Ionicons name="close" size={24} color="white" />
                 </TouchableOpacity>
@@ -1550,6 +1618,20 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  deletePostButton: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    zIndex: 10,
+  },
+  deletePostButtonInner: {
+    backgroundColor: "rgba(255, 59, 48, 0.8)",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   postGridOverlay: {
     position: "absolute",
     bottom: 0,
@@ -1805,7 +1887,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  deletePostButton: {
+  postDetailDeleteButton: {
     marginRight: 15,
   },
   postDetailScroll: {
