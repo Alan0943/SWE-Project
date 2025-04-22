@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server"
 import { v } from "convex/values"
+import { Id } from "./_generated/dataModel"
 
 export const createUser = mutation({
   args: {
@@ -286,15 +287,18 @@ export const deleteUserAccount = mutation({
 
 // Fix the getUserPosts query to properly handle optional userId
 export const getUserPosts = query({
-  args: { userId: v.optional(v.id("users")) },
+  args: { userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     // Return empty array if userId is not provided
     if (!args.userId) return []
 
+    // Convert string to Id<"users">
+    const userId = args.userId as unknown as Id<"users">
+
     // Now we know userId is defined, so we can safely use it
     const posts = await ctx.db
       .query("posts")
-      .withIndex("by_user", (q) => args.userId ? q.eq("userId", args.userId) : q)
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect()
 
     return posts.map((post) => ({
