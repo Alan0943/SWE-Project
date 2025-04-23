@@ -28,6 +28,7 @@ import * as ImagePicker from "expo-image-picker"
 import { useQuery, useMutation } from "convex/react"
 import { api } from "../../convex/_generated/api"
 import { useRouter } from "expo-router"
+import type { Id } from "@/convex/_generated/dataModel"
 
 const { width, height } = Dimensions.get("window")
 const isPhone = width < 600 // Simple check for screen width
@@ -241,17 +242,28 @@ export default function Profile() {
   const [isUpdatingUsername, setIsUpdatingUsername] = useState(false)
   const [isUpdatingFullname, setIsUpdatingFullname] = useState(false)
   const [isUpdatingImage, setIsUpdatingImage] = useState(false)
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true)
+  const [isDeletingPost, setIsDeletingPost] = useState(false)
 
   // Convex mutations
   const updateUsername = useMutation(api.users.updateUsername)
   const updateFullname = useMutation(api.users.updateFullname)
   const updateProfileImage = useMutation(api.users.updateProfileImage)
   const deleteUserAccount = useMutation(api.users.deleteUserAccount)
+  const toggleLikeMutation = useMutation(api.posts.toggleLike)
+  const addCommentMutation = useMutation(api.posts.addComment)
+  const deletePostMutation = useMutation(api.posts.deletePost)
 
   // Get user data from Convex
   const userData = useQuery(api.users.getUserByClerkId, {
     clerkId: user?.id || "",
   })
+
+  // Get user's posts from Convex
+  const userPosts = useQuery(
+    api.posts.getPostsByUserId,
+    userData?._id ? { userId: userData._id } : { userId: "" as Id<"users"> },
+  )
 
   // Refs for FlatLists to avoid the nesting error
   const postsListRef = useRef(null)
@@ -269,6 +281,14 @@ export default function Profile() {
       }
     }
   }, [userData, user])
+
+  // Update posts when userPosts query returns data
+  useEffect(() => {
+    if (userPosts) {
+      setPosts(userPosts)
+      setIsLoadingPosts(false)
+    }
+  }, [userPosts])
 
   // Load profile image from AsyncStorage
   useEffect(() => {
@@ -297,25 +317,6 @@ export default function Profile() {
       console.error("Error loading favorites:", error)
     }
   }
-
-  // Load posts from AsyncStorage
-  useEffect(() => {
-    const loadPosts = async () => {
-      try {
-        const storedPosts = await AsyncStorage.getItem("posts")
-        if (storedPosts) {
-          const parsedPosts = JSON.parse(storedPosts)
-          // Filter posts to only show the current user's posts
-          const userPosts = parsedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
-          setPosts(userPosts)
-        }
-      } catch (error) {
-        console.error("Error loading posts:", error)
-      }
-    }
-
-    loadPosts()
-  }, [username, user?.username])
 
   // Load added friends from AsyncStorage on mount
   useEffect(() => {
@@ -499,51 +500,12 @@ export default function Profile() {
   // Handle like post
   const handleLikePost = async (postId: string) => {
     try {
-      // Get all posts
-      const storedPosts = await AsyncStorage.getItem("posts")
-      if (storedPosts) {
-        const allPosts = JSON.parse(storedPosts)
-
-        // Find the post to update
-        const updatedPosts = allPosts.map((post: Post) => {
-          if (post.id === postId) {
-            // Check if user already liked the post
-            const userLiked = post.likes.includes(user?.id || "anonymous")
-
-            if (userLiked) {
-              // Unlike the post
-              return {
-                ...post,
-                likes: post.likes.filter((id: string) => id !== (user?.id || "anonymous")),
-              }
-            } else {
-              // Like the post
-              return {
-                ...post,
-                likes: [...post.likes, user?.id || "anonymous"],
-              }
-            }
-          }
-          return post
-        })
-
-        // Save updated posts
-        await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
-
-        // Update local state with user's posts
-        const userPosts = updatedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
-        setPosts(userPosts)
-
-        // Update selected post if in detail view
-        if (selectedPost && selectedPost.id === postId) {
-          const updatedPost = updatedPosts.find((post: Post) => post.id === postId)
-          if (updatedPost) {
-            setSelectedPost(updatedPost)
-          }
-        }
+      if (typeof postId === "string" && postId.startsWith("post_")) {
+        await toggleLikeMutation({ postId: postId as Id<"posts"> })
       }
     } catch (error) {
-      console.error("Error updating post likes:", error)
+      console.error("Error liking post:", error)
+      Alert.alert("Error", "Failed to like post. Please try again.")
     }
   }
 
@@ -552,49 +514,18 @@ export default function Profile() {
     if (!selectedPost || !newComment.trim()) return
 
     try {
-      // Get all posts
-      const storedPosts = await AsyncStorage.getItem("posts")
-      if (storedPosts) {
-        const allPosts = JSON.parse(storedPosts)
-
-        // Create new comment
-        const comment = {
-          id: Date.now().toString(),
-          userId: user?.id || "anonymous",
-          username: username || user?.username || "User",
-          text: newComment.trim(),
-          timestamp: Date.now(),
-        }
-
-        // Find the post to update
-        const updatedPosts = allPosts.map((post: Post) => {
-          if (post.id === selectedPost.id) {
-            return {
-              ...post,
-              comments: [...post.comments, comment],
-            }
-          }
-          return post
+      if (typeof selectedPost.id === "string" && selectedPost.id.startsWith("post_")) {
+        await addCommentMutation({
+          postId: selectedPost.id as Id<"posts">,
+          content: newComment.trim(),
         })
-
-        // Save updated posts
-        await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
-
-        // Update local state with user's posts
-        const userPosts = updatedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
-        setPosts(userPosts)
-
-        // Update selected post
-        const updatedPost = updatedPosts.find((post: Post) => post.id === selectedPost.id)
-        if (updatedPost) {
-          setSelectedPost(updatedPost)
-        }
 
         // Clear comment input
         setNewComment("")
       }
     } catch (error) {
       console.error("Error adding comment:", error)
+      Alert.alert("Error", "Failed to add comment. Please try again.")
     }
   }
 
@@ -605,35 +536,58 @@ export default function Profile() {
   }
 
   // Delete post
-  const deletePost = async (postId: string) => {
-    try {
-      // Get all posts
-      const storedPosts = await AsyncStorage.getItem("posts")
-      if (storedPosts) {
-        const allPosts = JSON.parse(storedPosts)
-
-        // Filter out the post to delete
-        const updatedPosts = allPosts.filter((post: Post) => post.id !== postId)
-
-        // Save updated posts to AsyncStorage
-        await AsyncStorage.setItem("posts", JSON.stringify(updatedPosts))
-
-        // Update local state with user's posts
-        const userPosts = updatedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
-        setPosts(userPosts)
-
-        // Close the modal if open
-        if (selectedPost?.id === postId) {
-          setShowPostDetail(false)
-        }
-
-        // Show success message
-        Alert.alert("Success", "Post deleted successfully")
+  const handleDeletePost = async (postId: string, event?: any) => {
+    // Stop event propagation if provided (to prevent opening post details)
+    if (event) {
+      // Handle both React Native and Web events
+      if (typeof event.stopPropagation === "function") {
+        event.stopPropagation()
+      } else if (event.preventDefault) {
+        // For web
+        event.preventDefault()
       }
-    } catch (error) {
-      console.error("Error deleting post:", error)
-      Alert.alert("Error", "Failed to delete post")
     }
+
+    // Confirm deletion
+    Alert.alert(
+      "Delete Post",
+      "Are you sure you want to delete this post? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeletingPost(true)
+            try {
+              console.log("Attempting to delete post with ID:", postId)
+              await deletePostMutation({ postId: postId as Id<"posts"> })
+              console.log("Post deleted successfully")
+
+              // Close the post detail modal if it's open
+              if (selectedPost && selectedPost.id === postId) {
+                setShowPostDetail(false)
+              }
+
+              // Remove the post from the local state
+              setPosts(posts.filter((post) => post.id !== postId))
+
+              // Show success message
+              Alert.alert("Success", "Post deleted successfully")
+            } catch (error) {
+              console.error("Error deleting post:", error)
+              Alert.alert("Error", "Failed to delete post. Please try again.")
+            } finally {
+              setIsDeletingPost(false)
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    )
   }
 
   // Share post
@@ -845,13 +799,8 @@ export default function Profile() {
 
     try {
       if (activeTab === "posts") {
-        // Reload posts
-        const storedPosts = await AsyncStorage.getItem("posts")
-        if (storedPosts) {
-          const parsedPosts = JSON.parse(storedPosts)
-          const userPosts = parsedPosts.filter((post: Post) => post.username === (username || user?.username || "User"))
-          setPosts(userPosts)
-        }
+        // Posts will be refreshed automatically by Convex
+        setIsLoadingPosts(true)
       } else if (activeTab === "friends") {
         // Reload friends
         const storedFriends = await AsyncStorage.getItem("addedFriends")
@@ -866,6 +815,7 @@ export default function Profile() {
       console.error("Error refreshing data:", error)
     } finally {
       setRefreshing(false)
+      setIsLoadingPosts(false)
     }
   }, [activeTab, username, user?.username])
 
@@ -873,10 +823,22 @@ export default function Profile() {
   const renderPostGridItem = ({ item }: { item: Post }) => (
     <Pressable style={styles.postGridItem} onPress={() => viewPostDetails(item)}>
       <Image source={{ uri: item.imageUri }} style={styles.postGridImage} />
+
+      {/* Delete button in top right corner */}
+      <TouchableOpacity
+        style={styles.deletePostButton}
+        onPress={(event) => handleDeletePost(item.id, event)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.deletePostButtonInner}>
+          <Ionicons name="trash-outline" size={16} color="white" />
+        </View>
+      </TouchableOpacity>
+
       <View style={styles.postGridOverlay}>
         <View style={styles.postGridStats}>
           <View style={styles.postGridStat}>
-            <Ionicons name="bookmark" size={14} color="white" />
+            <Ionicons name="heart" size={14} color="white" />
             <Text style={styles.postGridStatText}>{item.likes.length}</Text>
           </View>
           <View style={styles.postGridStat}>
@@ -958,7 +920,12 @@ export default function Profile() {
       case "posts":
         return (
           <View style={styles.postsContainer}>
-            {posts.length === 0 ? (
+            {isLoadingPosts ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading posts...</Text>
+              </View>
+            ) : posts.length === 0 ? (
               <ScrollView
                 contentContainerStyle={styles.emptyStateContainer}
                 refreshControl={
@@ -966,6 +933,10 @@ export default function Profile() {
                 }
               >
                 <Text style={styles.emptyStateText}>No posts yet</Text>
+                <TouchableOpacity style={styles.createPostButton} onPress={() => router.push("/(tabs)/create")}>
+                  <Ionicons name="add-circle-outline" size={20} color={COLORS.primary} />
+                  <Text style={styles.createPostText}>Create a post</Text>
+                </TouchableOpacity>
               </ScrollView>
             ) : (
               <FlatList
@@ -1296,31 +1267,10 @@ export default function Profile() {
             <View style={styles.postDetailHeader}>
               <Text style={styles.postDetailTitle}>Post</Text>
               <View style={styles.postDetailHeaderButtons}>
-                {selectedPost && selectedPost.username === (username || user?.username || "User") && (
+                {selectedPost && (
                   <TouchableOpacity
-                    style={styles.deletePostButton}
-                    onPress={() => {
-                      Alert.alert(
-                        "Delete Post",
-                        "Are you sure you want to delete this post?",
-                        [
-                          {
-                            text: "Cancel",
-                            style: "cancel",
-                          },
-                          {
-                            text: "Delete Post",
-                            style: "destructive",
-                            onPress: () => {
-                              if (selectedPost) {
-                                deletePost(selectedPost.id)
-                              }
-                            },
-                          },
-                        ],
-                        { cancelable: true },
-                      )
-                    }}
+                    style={styles.postDetailDeleteButton}
+                    onPress={() => handleDeletePost(selectedPost.id)}
                   >
                     <Ionicons name="trash-outline" size={22} color="#FF3B30" />
                   </TouchableOpacity>
@@ -1358,9 +1308,9 @@ export default function Profile() {
                   <View style={styles.postActions}>
                     <TouchableOpacity style={styles.postAction} onPress={() => handleLikePost(selectedPost.id)}>
                       <Ionicons
-                        name={selectedPost.likes.includes(user?.id || "anonymous") ? "bookmark" : "bookmark-outline"}
+                        name={selectedPost.likes.includes(user?.id || "anonymous") ? "heart" : "heart-outline"}
                         size={24}
-                        color={selectedPost.likes.includes(user?.id || "anonymous") ? COLORS.primary : "white"}
+                        color={selectedPost.likes.includes(user?.id || "anonymous") ? "red" : "white"}
                       />
                       <Text style={styles.postActionText}>{selectedPost.likes.length}</Text>
                     </TouchableOpacity>
@@ -1677,6 +1627,20 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  deletePostButton: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    zIndex: 10,
+  },
+  deletePostButtonInner: {
+    backgroundColor: "rgba(255, 59, 48, 0.8)",
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   postGridOverlay: {
     position: "absolute",
     bottom: 0,
@@ -1760,6 +1724,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
     marginTop: 30,
+  },
+  createPostButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(74, 222, 128, 0.1)",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 15,
+  },
+  createPostText: {
+    color: COLORS.primary,
+    marginLeft: 8,
   },
   modalOverlay: {
     flex: 1,
@@ -1919,7 +1896,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  deletePostButton: {
+  postDetailDeleteButton: {
     marginRight: 15,
   },
   postDetailScroll: {
@@ -2193,5 +2170,15 @@ const styles = StyleSheet.create({
     color: "#ccc",
     fontSize: 12,
     marginLeft: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 300,
+  },
+  loadingText: {
+    color: "#999",
+    marginTop: 10,
   },
 })

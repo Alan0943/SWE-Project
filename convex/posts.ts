@@ -48,6 +48,78 @@ export const createPost = mutation({
   },
 })
 
+// Delete a post
+export const deletePost = mutation({
+  args: {
+    postId: v.id("posts"),
+  },
+  handler: async (ctx, args) => {
+    console.log("deletePost mutation called with postId:", args.postId)
+
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) {
+      console.log("Unauthorized: No identity found")
+      throw new Error("Unauthorized")
+    }
+
+    const currentUser = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first()
+
+    if (!currentUser) {
+      console.log("User not found for clerkId:", identity.subject)
+      throw new Error("User not found")
+    }
+
+    // Get the post
+    const post = await ctx.db.get(args.postId)
+    if (!post) {
+      console.log("Post not found with ID:", args.postId)
+      throw new Error("Post not found")
+    }
+
+    // Check if the user is the owner of the post
+    if (post.userId.toString() !== currentUser._id.toString()) {
+      console.log("Not authorized to delete this post. Post userId:", post.userId, "Current user ID:", currentUser._id)
+      throw new Error("Not authorized to delete this post")
+    }
+
+    console.log("Deleting likes, comments, and post...")
+
+    // Delete all likes for this post
+    const likes = await ctx.db
+      .query("likes")
+      .withIndex("by_post", (q) => q.eq("postId", args.postId))
+      .collect()
+
+    for (const like of likes) {
+      await ctx.db.delete(like._id)
+    }
+
+    // Delete all comments for this post
+    const comments = await ctx.db
+      .query("comments")
+      .withIndex("by_post", (q) => q.eq("postId", args.postId))
+      .collect()
+
+    for (const comment of comments) {
+      await ctx.db.delete(comment._id)
+    }
+
+    // Delete the post
+    await ctx.db.delete(args.postId)
+
+    // Decrement the user's post count
+    await ctx.db.patch(currentUser._id, {
+      posts: Math.max(0, currentUser.posts - 1),
+    })
+
+    console.log("Post successfully deleted")
+    return { success: true }
+  },
+})
+
 // Get all posts for the feed
 export const getAllPosts = query(async (ctx) => {
   const posts = await ctx.db.query("posts").order("desc").collect()
@@ -101,6 +173,68 @@ export const getAllPosts = query(async (ctx) => {
   )
 
   return postsWithUserInfo
+})
+
+// Get posts by user ID
+export const getPostsByUserId = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const posts = await ctx.db
+      .query("posts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect()
+
+    // Fetch user information for each post
+    const postsWithUserInfo = await Promise.all(
+      posts.map(async (post) => {
+        const user = await ctx.db.get(post.userId)
+
+        // Get likes for this post
+        const likes = await ctx.db
+          .query("likes")
+          .withIndex("by_post", (q) => q.eq("postId", post._id))
+          .collect()
+
+        // Get comments for this post
+        const comments = await ctx.db
+          .query("comments")
+          .withIndex("by_post", (q) => q.eq("postId", post._id))
+          .collect()
+
+        // Get user info for each comment
+        const commentsWithUserInfo = await Promise.all(
+          comments.map(async (comment) => {
+            const commentUser = await ctx.db.get(comment.userId)
+            return {
+              ...comment,
+              username: commentUser?.username || "Unknown User",
+            }
+          }),
+        )
+
+        return {
+          id: post._id,
+          imageUri: post.imageUrl,
+          caption: post.caption || "",
+          username: user?.username || "Unknown User",
+          userImageUrl: user?.image || null,
+          timestamp: post._creationTime,
+          likes: likes.map((like) => like.userId),
+          comments: commentsWithUserInfo.map((comment) => ({
+            id: comment._id,
+            userId: comment.userId,
+            username: comment.username,
+            text: comment.content,
+            timestamp: comment._creationTime,
+          })),
+          barTag: post.barTag || null,
+        }
+      }),
+    )
+
+    return postsWithUserInfo
+  },
 })
 
 // Toggle like on a post
