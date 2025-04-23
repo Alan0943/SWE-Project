@@ -539,7 +539,13 @@ export default function Profile() {
   const handleDeletePost = async (postId: string, event?: any) => {
     // Stop event propagation if provided (to prevent opening post details)
     if (event) {
-      event.stopPropagation()
+      // Handle both React Native and Web events
+      if (typeof event.stopPropagation === "function") {
+        event.stopPropagation()
+      } else if (event.preventDefault) {
+        // For web
+        event.preventDefault()
+      }
     }
 
     // Confirm deletion
@@ -557,17 +563,20 @@ export default function Profile() {
           onPress: async () => {
             setIsDeletingPost(true)
             try {
-              if (typeof postId === "string" && postId.startsWith("post_")) {
-                await deletePostMutation({ postId: postId as Id<"posts"> })
+              console.log("Attempting to delete post with ID:", postId)
+              await deletePostMutation({ postId: postId as Id<"posts"> })
+              console.log("Post deleted successfully")
 
-                // Close the post detail modal if it's open
-                if (selectedPost && selectedPost.id === postId) {
-                  setShowPostDetail(false)
-                }
-
-                // Show success message
-                Alert.alert("Success", "Post deleted successfully")
+              // Close the post detail modal if it's open
+              if (selectedPost && selectedPost.id === postId) {
+                setShowPostDetail(false)
               }
+
+              // Remove the post from the local state
+              setPosts(posts.filter((post) => post.id !== postId))
+
+              // Show success message
+              Alert.alert("Success", "Post deleted successfully")
             } catch (error) {
               console.error("Error deleting post:", error)
               Alert.alert("Error", "Failed to delete post. Please try again.")

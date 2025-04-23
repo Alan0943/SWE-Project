@@ -54,24 +54,38 @@ export const deletePost = mutation({
     postId: v.id("posts"),
   },
   handler: async (ctx, args) => {
+    console.log("deletePost mutation called with postId:", args.postId)
+
     const identity = await ctx.auth.getUserIdentity()
-    if (!identity) throw new Error("Unauthorized")
+    if (!identity) {
+      console.log("Unauthorized: No identity found")
+      throw new Error("Unauthorized")
+    }
 
     const currentUser = await ctx.db
       .query("users")
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first()
 
-    if (!currentUser) throw new Error("User not found")
+    if (!currentUser) {
+      console.log("User not found for clerkId:", identity.subject)
+      throw new Error("User not found")
+    }
 
     // Get the post
     const post = await ctx.db.get(args.postId)
-    if (!post) throw new Error("Post not found")
+    if (!post) {
+      console.log("Post not found with ID:", args.postId)
+      throw new Error("Post not found")
+    }
 
     // Check if the user is the owner of the post
     if (post.userId.toString() !== currentUser._id.toString()) {
+      console.log("Not authorized to delete this post. Post userId:", post.userId, "Current user ID:", currentUser._id)
       throw new Error("Not authorized to delete this post")
     }
+
+    console.log("Deleting likes, comments, and post...")
 
     // Delete all likes for this post
     const likes = await ctx.db
@@ -101,6 +115,7 @@ export const deletePost = mutation({
       posts: Math.max(0, currentUser.posts - 1),
     })
 
+    console.log("Post successfully deleted")
     return { success: true }
   },
 })

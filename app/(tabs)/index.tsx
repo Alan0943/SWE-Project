@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, memo, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Image,
   Text,
@@ -30,6 +30,7 @@ import { useQuery, useMutation } from "convex/react"
 import type { Id } from "@/convex/_generated/dataModel"
 
 const { width, height } = Dimensions.get("window")
+const isPhone = width < 600
 
 // Post type definition
 interface Post {
@@ -42,6 +43,7 @@ interface Post {
   likes: string[] // array of user IDs who liked the post
   comments: Comment[]
   barTag: string | null
+  userId?: string // Add userId to check if post belongs to current user
 }
 
 interface Comment {
@@ -60,14 +62,21 @@ export default function Index() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [commentModalVisible, setCommentModalVisible] = useState(false)
   const [fullImageModalVisible, setFullImageModalVisible] = useState(false)
+  const [isDeletingPost, setIsDeletingPost] = useState(false)
 
   // Fetch posts from Convex
   const convexPosts = useQuery(api.posts.getAllPosts) || []
   const loading = convexPosts === undefined
 
+  // Get current user data
+  const userData = useQuery(api.users.getUserByClerkId, {
+    clerkId: user?.id || "",
+  })
+
   // Convex mutations
   const toggleLikeMutation = useMutation(api.posts.toggleLike)
   const addCommentMutation = useMutation(api.posts.addComment)
+  const deletePostMutation = useMutation(api.posts.deletePost)
 
   // ✅ Bar data
   const bars = [
@@ -123,18 +132,19 @@ export default function Index() {
   ]
 
   // Handle like post
-  const handleLikePost = useCallback(async (postId: Id<"posts">) => {
-    if (!isUserLoaded || !user) return
+  const handleLikePost = useCallback(
+    async (postId: Id<"posts">) => {
+      if (!isUserLoaded || !user) return
 
-    try {
-      await toggleLikeMutation({ postId })
-    } catch (error) {
-      console.error("Error liking post:", error)
-      Alert.alert("Error", "Failed to like post. Please try again.")
-    }
-  },
-  [isUserLoaded, user, toggleLikeMutation],
-)
+      try {
+        await toggleLikeMutation({ postId })
+      } catch (error) {
+        console.error("Error liking post:", error)
+        Alert.alert("Error", "Failed to like post. Please try again.")
+      }
+    },
+    [isUserLoaded, user, toggleLikeMutation],
+  )
 
   // Handle add comment
   const handleAddComment = async () => {
@@ -153,6 +163,58 @@ export default function Index() {
       Alert.alert("Error", "Failed to add comment. Please try again.")
     }
   }
+
+  // Delete post
+  const handleDeletePost = useCallback(
+    async (postId: Id<"posts">) => {
+      console.log("Delete button clicked for post:", postId)
+
+      // Confirm deletion
+      Alert.alert(
+        "Delete Post",
+        "Are you sure you want to delete this post? This action cannot be undone.",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              console.log("Confirmed delete for post:", postId)
+              setIsDeletingPost(true)
+              setSelectedPost((prevPost) => (prevPost?.id === postId ? prevPost : null))
+
+              try {
+                console.log("Calling deletePostMutation with ID:", postId)
+                const result = await deletePostMutation({ postId })
+                console.log("Delete result:", result)
+
+                // Close modals if they're open
+                setCommentModalVisible(false)
+                setFullImageModalVisible(false)
+
+                // Show success message
+                Alert.alert("Success", "Post deleted successfully")
+              } catch (error) {
+                console.error("Error deleting post:", error)
+                Alert.alert(
+                  "Error",
+                  "Failed to delete post. Please try again. " +
+                    (error instanceof Error ? error.message : "Unknown error"),
+                )
+              } finally {
+                setIsDeletingPost(false)
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      )
+    },
+    [deletePostMutation],
+  )
 
   // Share post
   const sharePost = useCallback(async (post: Post) => {
@@ -219,9 +281,29 @@ export default function Index() {
   }
 
   // Check if post belongs to current user
-  const isUserPost = (post: Post) => {
-    return isUserLoaded && user && post.username === (user.username || user.firstName || "Anonymous")
-  }
+  const isUserPost = useCallback(
+    (post: Post) => {
+      // Simple check - if we're not loaded or no user, can't be the user's post
+      if (!isUserLoaded || !user) return false
+
+      // Log for debugging
+      console.log("Checking post ownership:", {
+        postUsername: post.username,
+        userUsername: user.username,
+        userFirstName: user.firstName,
+        postUserId: post.userId,
+        userDataId: userData?._id,
+      })
+
+      // More permissive check - match on username OR userId if available
+      return (
+        post.username === user.username ||
+        post.username === user.firstName ||
+        (userData && post.userId && post.userId === userData._id)
+      )
+    },
+    [isUserLoaded, user, userData],
+  )
 
   // Render comment modal
   const renderCommentModal = () => {
@@ -322,6 +404,12 @@ export default function Index() {
   // Render post item
   const renderPostItem = ({ item: post }: { item: Post }) => {
     const isLiked = isUserLoaded && user ? post.likes.includes(user.id) : false
+    const canDelete = isUserPost(post)
+
+    // Log for debugging
+    if (canDelete) {
+      console.log("User can delete post:", post.id)
+    }
 
     return (
       <View style={feedStyles.postContainer}>
@@ -339,15 +427,36 @@ export default function Index() {
               <Text style={feedStyles.timestamp}>{formatTimestamp(post.timestamp)}</Text>
             </View>
           </View>
-          {post.barTag && (
-            <View style={feedStyles.barTag}>
-              <Ionicons name="location" size={14} color={COLORS.primary} />
-              <Text style={feedStyles.barTagText}>{post.barTag}</Text>
-            </View>
-          )}
+
+          <View style={feedStyles.postHeaderRight}>
+            {post.barTag && (
+              <View style={feedStyles.barTag}>
+                <Ionicons name="location" size={14} color={COLORS.primary} />
+                <Text style={feedStyles.barTagText}>{post.barTag}</Text>
+              </View>
+            )}
+
+            {/* PROMINENT DELETE BUTTON - Always visible for debugging */}
+            {canDelete && (
+              <TouchableOpacity
+                style={feedStyles.deleteButtonProminent}
+                onPress={() => handleDeletePost(post.id as Id<"posts">)}
+                disabled={isDeletingPost}
+              >
+                {isDeletingPost && selectedPost?.id === post.id ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <View style={feedStyles.deleteButtonInner}>
+                    <Ionicons name="trash" size={18} color="white" />
+                    <Text style={feedStyles.deleteButtonText}>Delete</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        {/* Post Image */}
+        {/* Rest of the post content remains the same */}
         <TouchableOpacity
           activeOpacity={0.9}
           onPress={() => {
@@ -358,7 +467,6 @@ export default function Index() {
           <Image source={{ uri: post.imageUri }} style={feedStyles.postImage} />
         </TouchableOpacity>
 
-        {/* Post Actions */}
         <View style={feedStyles.postActions}>
           <TouchableOpacity style={feedStyles.actionButton} onPress={() => handleLikePost(post.id as Id<"posts">)}>
             <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "red" : "white"} />
@@ -388,14 +496,12 @@ export default function Index() {
           </TouchableOpacity>
         </View>
 
-        {/* Post Caption */}
         <View style={feedStyles.captionContainer}>
           <Text style={feedStyles.caption}>
             <Text style={feedStyles.captionUsername}>{post.username}</Text> <Text>{post.caption}</Text>
           </Text>
         </View>
 
-        {/* Comments Preview */}
         {post.comments.length > 0 && (
           <TouchableOpacity
             style={feedStyles.commentsPreview}
@@ -418,7 +524,6 @@ export default function Index() {
         )}
       </View>
     )
-    
   }
 
   // Render bar item
@@ -678,6 +783,18 @@ const feedStyles = StyleSheet.create({
     color: "#999",
     fontSize: 12,
   },
+  postHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  deleteButton: {
+    marginRight: 10,
+    padding: 5,
+    width: 30,
+    height: 30,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   barTag: {
     flexDirection: "row",
     alignItems: "center",
@@ -882,6 +999,23 @@ const feedStyles = StyleSheet.create({
   fullImageBarTagText: {
     color: COLORS.primary,
     fontSize: 14,
+    marginLeft: 4,
+  },
+  deleteButtonProminent: {
+    backgroundColor: "#FF3B30",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginLeft: 10,
+  },
+  deleteButtonInner: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  deleteButtonText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "bold",
     marginLeft: 4,
   },
 })
